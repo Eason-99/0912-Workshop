@@ -1,0 +1,3372 @@
+跳至内容
+历史聊天记录
+ChatGPT
+新聊天
+图片
+资料库
+定时任务
+插件
+Codex
+更多
+置顶
+ODDR
+CityU
+Bandit
+Courses
+搭建 Agent 大纲
+201-MS8944 Probability and Markov Chain Models
+102-MS8952 Introduction to Mathematical Statistics
+101-MS8952 Introduction to Mathematical Statistics（数学统计导论）
+商业调研Agent搭建
+显示更多
+项目
+ODDR+DRL
+LLM4sche
+论文总结
+Platform
+20260331-
+查看更多
+聊天
+分享聊天继续交流
+泊松和分布求解
+解释EXP含义
+保存Wallpaper壁纸
+恒生账户收款能力
+推导风险函数
+PDF组织形式解析
+燕窝营养靠谱吗
+燕窝长期食用量
+二项分布泊松分布联系
+画家风格辨析
+英语回复老师通知
+寻找工伤律师
+GPT桌面版代理设置
+回复HKID材料邮件
+录音笔品牌比较
+联通香港漫游资费
+逐句翻译论文摘要
+电信卡无服务原因
+修改WSDM LaTeX头部
+检查残留实验数据
+识别内存颗粒品牌
+比较内存频率差异
+炒菜用油比较[?]
+Ti15淘汰赛分析
+2000元手机推荐
+香港城市大学PhD入学流程
+鸣潮服切换方案
+yichen
+免费版
+升级
+Courses
+升级
+分享
+本次聊天中
+创建
+从资料库打开
+来源
+Tools - OpenAI Agents SDK
+Tools | OpenAI Agents SDK
+OpenAI Agents SDK
+Agents - OpenAI Agents SDK
+tool | OpenAI Agents SDK
+Quickstart - OpenAI Agents SDK
+Tool | OpenAI Agents SDK
+OpenAI Agents SDK TypeScript | OpenAI Agents SDK
+Agents | OpenAI Agents SDK
+Do the OpenAI API models have knowledge of current events? | OpenAI Help Center
+Assistants API (v2) FAQ | OpenAI Help Center
+昨天 14:19
+我要给商科的同学们讲解从零开始的agent搭建，框架大致按这个来：\documentclass[11pt,a4paper]{ctexart}
+
+% ============================================================
+% 基础宏包
+% ============================================================
+
+\usepackage[
+    left=2.3cm,
+    right=2.3cm,
+    top=2.2cm,
+    bottom=2.2cm
+]{geometry}
+
+\usepackage{amsmath}
+\usepackage{amssymb}
+\usepackage{booktabs}
+\usepackage{array}
+\usepackage{enumitem}
+\usepackage{xcolor}
+\usepackage{hyperref}
+\usepackage{listings}
+\usepackage{tikz}
+\usepackage{fancyhdr}
+
+\usetikzlibrary{
+    arrows.meta,
+    positioning,
+    shapes.geometric
+}
+
+% ============================================================
+% 超链接
+% ============================================================
+
+\hypersetup{
+    colorlinks=true,
+    linkcolor=blue,
+    urlcolor=blue,
+    citecolor=blue
+}
+
+% ============================================================
+% 页眉页脚
+% ============================================================
+
+\pagestyle{fancy}
+\fancyhf{}
+\fancyhead[L]{从 LLM API 到 Agent}
+\fancyhead[R]{PhD Workshop}
+\fancyfoot[C]{\thepage}
+
+% ============================================================
+% 代码格式
+% ============================================================
+
+\definecolor{codebg}{RGB}{247,247,247}
+\definecolor{codeblue}{RGB}{35,70,130}
+\definecolor{codegreen}{RGB}{30,110,70}
+\definecolor{codered}{RGB}{150,55,55}
+
+\lstset{
+    basicstyle=\ttfamily\small,
+    backgroundcolor=\color{codebg},
+    frame=single,
+    breaklines=true,
+    showstringspaces=false,
+    columns=fullflexible,
+    keywordstyle=\color{codeblue}\bfseries,
+    commentstyle=\color{codegreen},
+    stringstyle=\color{codered},
+    tabsize=4
+}
+
+% ============================================================
+% 自定义环境
+% ============================================================
+
+\newenvironment{outlinebox}
+{
+    \par
+    \vspace{0.5em}
+    \noindent
+    \textbf{\large 讲解大纲}
+    \par
+    \vspace{0.3em}
+    \begin{quote}
+}
+{
+    \end{quote}
+    \vspace{0.3em}
+}
+
+\newenvironment{notebox}
+{
+    \par
+    \vspace{0.6em}
+    \noindent
+    \textbf{\large 演讲备注}
+    \par
+    \vspace{0.3em}
+    \begin{quote}
+    \small
+}
+{
+    \end{quote}
+    \vspace{0.5em}
+}
+
+\newenvironment{keybox}
+{
+    \par
+    \vspace{0.5em}
+    \noindent
+    \textbf{\large 核心结论}
+    \par
+    \vspace{0.3em}
+    \begin{quote}
+}
+{
+    \end{quote}
+    \vspace{0.5em}
+}
+
+% ============================================================
+% TikZ 样式
+% ============================================================
+
+\tikzset{
+    box/.style={
+        rectangle,
+        rounded corners,
+        draw=black,
+        thick,
+        align=center,
+        minimum width=2.7cm,
+        minimum height=0.9cm
+    },
+    smallbox/.style={
+        rectangle,
+        rounded corners,
+        draw=black,
+        align=center,
+        minimum width=2.1cm,
+        minimum height=0.75cm
+    },
+    arrow/.style={
+        ->,
+        >=Latex,
+        thick
+    }
+}
+
+% ============================================================
+% 文档开始
+% ============================================================
+
+\begin{document}
+
+\title{
+    \textbf{从 LLM API 到 Agent：\\
+    从零理解并搭建一个智能体框架}
+}
+
+\author{PhD Workshop}
+
+\date{约 60 分钟}
+
+\maketitle
+
+\tableofcontents
+
+\newpage
+
+% ============================================================
+% 1. Workshop 总体设计
+% ============================================================
+
+\section{Workshop 总体设计}
+
+本次 Workshop 的目标不是介绍某一个具体的
+Agent Framework（智能体框架），
+而是从最基本的 LLM API 调用出发，
+逐步理解一个普通的大语言模型应用
+如何演化为完整的 Agent（智能体）系统。
+
+整个演化过程可以概括为：
+
+\[
+\text{API}
+\rightarrow
+\text{Structured Output}
+\rightarrow
+\text{Tool Calling}
+\rightarrow
+\text{Workflow}
+\rightarrow
+\text{Agent Loop}
+\]
+
+进一步加入：
+
+\[
+\text{State}
++
+\text{Memory}
++
+\text{Planning}
++
+\text{Reflection}
+\]
+
+最终扩展为：
+
+\[
+\text{Multi-Agent}
++
+\text{Agent Framework}
+\]
+
+\vspace{0.5cm}
+
+整个 Workshop 的建议时间如下。
+
+\begin{center}
+\begin{tabular}{p{0.10\textwidth}p{0.55\textwidth}p{0.15\textwidth}}
+\toprule
+阶段 & 内容 & 时间 \\
+\midrule
+
+1 & LLM API 基础 & 6 min \\
+
+2 & Structured Output（结构化输出） & 4 min \\
+
+3 & Tool Calling（工具调用） & 8 min \\
+
+4 & Workflow（工作流） & 5 min \\
+
+5 & Agent Loop（智能体循环） & 10 min \\
+
+6 & State / Memory（状态与记忆） & 6 min \\
+
+7 & Planning / Reflection（规划与反思） & 8 min \\
+
+8 & Multi-Agent / Framework & 6 min \\
+
+9 & Failure / Evaluation / 总结 & 7 min \\
+
+\bottomrule
+\end{tabular}
+\end{center}
+
+\begin{keybox}
+如果听众最终只记住一个核心框架，可以记住：
+
+\[
+\boxed{
+\text{Agent}
+\approx
+\text{LLM}
++
+\text{Tools}
++
+\text{State}
++
+\text{Loop}
+}
+\]
+
+Memory（记忆）、Planning（规划）、
+Reflection（反思）和 Multi-Agent（多智能体）
+都可以看作在这个基本结构上的增强。
+\end{keybox}
+
+\begin{notebox}
+这里的公式是教学上的抽象，而不是严格统一的学术定义。
+
+目前 Agent 并不存在一个所有论文、公司和框架都统一采用的形式化定义。
+
+Workshop 中应该强调“理解机制”，而不要花时间争论边界定义。
+\end{notebox}
+
+% ============================================================
+% 2. 为什么从 API 开始
+% ============================================================
+
+\section{Step 1：从 LLM API 开始}
+
+\begin{outlinebox}
+这一部分主要展示：
+
+\begin{enumerate}
+    \item API（Application Programming Interface，应用程序接口）是什么；
+    \item 一次 LLM 调用发生了什么；
+    \item Prompt、Message、Response 的关系；
+    \item 一个最简单的 Python Demo；
+    \item 为什么单次 API 调用无法完成复杂任务。
+\end{enumerate}
+\end{outlinebox}
+
+\subsection{把 LLM 看成一个函数}
+
+从程序角度，可以先非常粗略地把 LLM 理解成：
+
+\[
+\text{response}
+=
+\text{LLM}(\text{prompt})
+\]
+
+也就是：
+
+\[
+\text{输入文本}
+\rightarrow
+\text{模型}
+\rightarrow
+\text{输出文本}
+\]
+
+例如：
+
+\begin{lstlisting}[language=Python]
+question = """
+Explain the difference between
+Poisson and Normal distributions.
+"""
+
+response = call_llm(question)
+
+print(response)
+\end{lstlisting}
+
+实际使用中，模型通常接收的不只是一个字符串，而是一组
+Message（消息）。
+
+例如：
+
+\begin{lstlisting}[language=Python]
+messages = [
+    {
+        "role": "system",
+        "content": "You are a research assistant."
+    },
+    {
+        "role": "user",
+        "content": "Compare three LLM agent papers."
+    }
+]
+\end{lstlisting}
+
+模型看到的内容可以粗略写成：
+
+\[
+\text{Instruction}
++
+\text{Context}
++
+\text{User Query}
+\]
+
+然后生成 Response（响应）。
+
+\subsection{现实中的例子}
+
+常见的 LLM API 提供者包括：
+
+\begin{itemize}
+    \item OpenAI；
+    \item Anthropic Claude；
+    \item Google Gemini；
+    \item DeepSeek；
+    \item 开源模型服务，例如基于 vLLM 部署的模型。
+\end{itemize}
+
+这些 API 的参数形式可能不同，
+但是核心模式基本一致：
+
+\[
+\text{程序发送请求}
+\rightarrow
+\text{模型生成}
+\rightarrow
+\text{程序收到结果}
+\]
+
+\subsection{Demo 1：最简单的一次 API 调用}
+
+可以现场让模型完成：
+
+\begin{center}
+\texttt{What is 8173 * 9271?}
+\end{center}
+
+示意代码：
+
+\begin{lstlisting}[language=Python]
+question = "What is 8173 * 9271?"
+
+response = call_llm(question)
+
+print(response)
+\end{lstlisting}
+
+然后提出问题：
+
+\begin{center}
+\textbf{模型是真的调用了一个计算器吗？}
+\end{center}
+
+通常答案是否定的。
+
+如果只是普通文本生成，
+模型本质上还是在生成 Token（词元）。
+
+\begin{keybox}
+普通 API 调用的本质仍然是：
+
+\[
+\text{Input}
+\rightarrow
+\text{LLM}
+\rightarrow
+\text{Output}
+\]
+
+模型还没有真正与外部世界产生交互。
+\end{keybox}
+
+\begin{notebox}
+这一部分不要深入讲 Transformer、Attention 或 Sampling。
+
+Workshop 的重点是 Agent System（智能体系统），
+不是语言模型原理。
+
+Temperature（温度参数）等也只需一两句话带过。
+
+关键是让听众知道：
+后面所有复杂 Agent，本质上都建立在这种普通 API 调用之上。
+\end{notebox}
+
+% ============================================================
+% 3. Structured Output
+% ============================================================
+
+\section{Step 2：Structured Output——让模型输出“决策”}
+
+\begin{outlinebox}
+这一部分主要展示：
+
+\begin{enumerate}
+    \item 为什么自然语言输出不利于程序控制；
+    \item JSON（JavaScript Object Notation）形式；
+    \item Action（动作）与 Arguments（参数）；
+    \item LLM 从 Text Generator 向 Decision Module 转变。
+\end{enumerate}
+\end{outlinebox}
+
+假设模型输出：
+
+\begin{lstlisting}
+I think we should use a calculator.
+\end{lstlisting}
+
+人类当然知道它是什么意思，
+但程序很难稳定解析。
+
+因此可以要求模型输出 Structured Output（结构化输出）。
+
+例如：
+
+\begin{lstlisting}
+{
+    "action": "calculator",
+    "arguments": {
+        "expression": "8173 * 9271"
+    }
+}
+\end{lstlisting}
+
+此时程序可以直接读取：
+
+\begin{lstlisting}[language=Python]
+action = response["action"]
+arguments = response["arguments"]
+\end{lstlisting}
+
+于是 LLM 的作用开始发生变化。
+
+原来：
+
+\[
+\text{LLM}
+\rightarrow
+\text{Natural Language Answer}
+\]
+
+现在：
+
+\[
+\text{LLM}
+\rightarrow
+\text{Machine-readable Decision}
+\]
+
+即：
+
+\[
+\text{文本生成器}
+\rightarrow
+\text{决策模块}
+\]
+
+\subsection{Demo 2：选择 Calculator}
+
+Prompt 可以告诉模型：
+
+\begin{lstlisting}
+If arithmetic calculation is required,
+return a JSON object:
+
+{
+    "action": "calculator",
+    "expression": "..."
+}
+\end{lstlisting}
+
+用户输入：
+
+\begin{lstlisting}
+What is 8173 * 9271?
+\end{lstlisting}
+
+模型输出：
+
+\begin{lstlisting}
+{
+    "action": "calculator",
+    "expression": "8173 * 9271"
+}
+\end{lstlisting}
+
+\begin{notebox}
+需要强调：
+
+Structured Output 本身还不是 Agent。
+
+它只是解决了一个很重要的问题：
+
+\[
+\text{如何让程序可靠理解 LLM 的决定？}
+\]
+
+现代 API 中通常可以通过 JSON Schema（JSON 模式）
+或 Function Schema（函数模式）
+对模型输出进行进一步约束。
+\end{notebox}
+
+% ============================================================
+% 4. Tool Calling
+% ============================================================
+
+\section{Step 3：Tool Calling——让 LLM 能够采取行动}
+
+\begin{outlinebox}
+这一部分主要展示：
+
+\begin{enumerate}
+    \item Tool（工具）是什么；
+    \item LLM 与 Runtime（运行环境）的分工；
+    \item Claude、ChatGPT 等工具型能力；
+    \item Calculator Tool Demo；
+    \item Tool Calling 的完整执行链。
+\end{enumerate}
+\end{outlinebox}
+
+\subsection{Tool Calling 的核心机制}
+
+假设我们定义一个工具：
+
+\begin{lstlisting}[language=Python]
+def calculator(expression):
+    return eval(expression)
+\end{lstlisting}
+
+为了教学，可以先忽略安全问题。
+
+模型可以得到工具说明：
+
+\begin{lstlisting}
+Tool:
+calculator(expression)
+
+Use it for arithmetic calculations.
+\end{lstlisting}
+
+然后模型产生：
+
+\begin{lstlisting}
+{
+    "tool": "calculator",
+    "arguments": {
+        "expression": "8173 * 9271"
+    }
+}
+\end{lstlisting}
+
+但这里最重要的一点是：
+
+\begin{center}
+\textbf{LLM 并没有真正执行 Python 函数。}
+\end{center}
+
+真正执行工具的是外部程序。
+
+\subsection{完整执行流程}
+
+\begin{center}
+
+\begin{tikzpicture}[node distance=0.7cm]
+
+\node[box] (user) {User};
+\node[box, right=of user] (llm1) {LLM};
+\node[box, right=of llm1] (call) {Tool Call};
+
+\node[box, below=1cm of call] (runtime)
+{Runtime};
+
+\node[box, left=of runtime] (result)
+{Tool Result};
+
+\node[box, left=of result] (llm2)
+{LLM Again};
+
+\draw[arrow] (user) -- (llm1);
+\draw[arrow] (llm1) -- (call);
+\draw[arrow] (call) -- (runtime);
+\draw[arrow] (runtime) -- (result);
+\draw[arrow] (result) -- (llm2);
+
+\end{tikzpicture}
+
+\end{center}
+
+也就是：
+
+\[
+\text{User}
+\rightarrow
+\text{LLM}
+\rightarrow
+\text{Tool Call}
+\rightarrow
+\text{Runtime}
+\]
+
+然后：
+
+\[
+\text{Tool Result}
+\rightarrow
+\text{LLM}
+\rightarrow
+\text{Answer}
+\]
+
+\subsection{Tool 可以是什么？}
+
+对于 LLM 来说，下列东西本质上都可以抽象为 Tool：
+
+\begin{itemize}
+    \item Calculator（计算器）；
+    \item Web Search（网页搜索）；
+    \item Python；
+    \item Database Query（数据库查询）；
+    \item Browser（浏览器）；
+    \item File System（文件系统）；
+    \item Email API；
+    \item Calendar API。
+\end{itemize}
+
+科研环境中的 Tool 还可以包括：
+
+\begin{itemize}
+    \item Search Paper；
+    \item Read PDF；
+    \item Run Experiment；
+    \item Parse Log；
+    \item Plot Figure；
+    \item Edit \LaTeX；
+    \item Run Unit Test。
+\end{itemize}
+
+\subsection{现实产品例子}
+
+Claude、ChatGPT 等现代 LLM 产品都可以在不同环境中表现出
+Tool-augmented（工具增强）能力，例如：
+
+\begin{itemize}
+    \item 搜索网页；
+    \item 执行代码；
+    \item 读取文件；
+    \item 操作外部服务。
+\end{itemize}
+
+但需要注意：
+
+\begin{center}
+\textbf{不要根据网页 UI 推断产品内部的具体实现架构。}
+\end{center}
+
+我们能观察到的是功能行为，
+而具体内部编排可能是 Workflow、Agent，
+也可能是多个机制组合。
+
+\begin{notebox}
+现场 Demo 建议使用 Calculator。
+
+原因是：
+
+\begin{itemize}
+    \item 无网络依赖；
+    \item 结果确定；
+    \item Tool Result 容易理解；
+    \item 能清楚展示 LLM 与 Runtime 的职责分工。
+\end{itemize}
+
+另外：
+
+\texttt{eval()} 不适合真实系统中的不可信输入。
+
+真实系统需要输入验证（Input Validation）、
+权限限制（Permission Control）和 Sandbox（沙箱）。
+\end{notebox}
+
+% ============================================================
+% 5. Workflow
+% ============================================================
+
+\section{Step 4：Workflow——把多个 LLM 和 Tool 串起来}
+
+\begin{outlinebox}
+这一部分主要展示：
+
+\begin{enumerate}
+    \item 什么是 Workflow（工作流）；
+    \item 多步骤任务；
+    \item AI Writing 与 PPT 生成的 Workflow；
+    \item Workflow 为什么还不一定是 Agent。
+\end{enumerate}
+\end{outlinebox}
+
+假设要完成一个 Literature Review（文献综述）。
+
+可以提前写死：
+
+\[
+\text{Search}
+\rightarrow
+\text{Read}
+\rightarrow
+\text{Extract}
+\rightarrow
+\text{Summarize}
+\]
+
+这种流程就是 Workflow。
+
+\begin{center}
+
+\begin{tikzpicture}[node distance=0.55cm]
+
+\node[smallbox] (q) {Research Question};
+\node[smallbox, right=of q] (s) {Search};
+\node[smallbox, right=of s] (r) {Read};
+\node[smallbox, right=of r] (e) {Extract};
+\node[smallbox, right=of e] (w) {Write};
+
+\draw[arrow] (q) -- (s);
+\draw[arrow] (s) -- (r);
+\draw[arrow] (r) -- (e);
+\draw[arrow] (e) -- (w);
+
+\end{tikzpicture}
+
+\end{center}
+
+Workflow 的特点：
+
+\begin{itemize}
+    \item 路径预先确定；
+    \item 易于 Debug（调试）；
+    \item 成本比较可预测；
+    \item 行为稳定；
+    \item 但适应性较弱。
+\end{itemize}
+
+\subsection{AI Writing 的 Workflow}
+
+例如：
+
+\[
+\text{Topic}
+\rightarrow
+\text{Search References}
+\rightarrow
+\text{Outline}
+\rightarrow
+\text{Draft}
+\rightarrow
+\text{Check}
+\rightarrow
+\text{Revise}
+\]
+
+这已经比单次 Prompt 强很多。
+
+\subsection{AI PPT 的 Workflow}
+
+类似：
+
+\[
+\text{Topic}
+\rightarrow
+\text{Outline}
+\rightarrow
+\text{Generate Slides}
+\rightarrow
+\text{Generate Figures}
+\rightarrow
+\text{Layout Check}
+\rightarrow
+\text{Revise}
+\]
+
+因此很多所谓“AI 自动做 PPT”的系统，
+从架构上其实完全可以是 Workflow。
+
+\begin{keybox}
+Workflow 和 Agent 的关键区别，不在于系统有没有很多步骤。
+
+真正的问题是：
+
+\[
+\boxed{\text{下一步动作是谁决定的？}}
+\]
+\end{keybox}
+
+\begin{notebox}
+这里不要贬低 Workflow。
+
+实际工程里，如果流程本来就非常明确，
+Workflow 往往比完全自主 Agent 更稳定、更便宜。
+
+“Agent 化”不是越多越好。
+\end{notebox}
+
+% ============================================================
+% 6. Agent Loop
+% ============================================================
+
+\section{Step 5：Agent Loop——真正进入 Agent}
+
+\begin{outlinebox}
+这一部分是整个 Workshop 的核心。
+
+主要展示：
+
+\begin{enumerate}
+    \item Workflow 与 Agent 的根本区别；
+    \item State（状态）与 Action（动作）；
+    \item Agent Loop（智能体循环）；
+    \item Observe--Reason--Act；
+    \item 最小 Agent 代码；
+    \item Research Agent Demo。
+\end{enumerate}
+\end{outlinebox}
+
+\subsection{Workflow 与 Agent}
+
+Workflow 中：
+
+\[
+A
+\rightarrow
+B
+\rightarrow
+C
+\]
+
+下一步由程序员预先确定。
+
+Agent 中，
+模型根据当前状态 s_t
+动态选择动作 a_t。
+
+可以写成：
+
+\[
+a_t = \pi(s_t)
+\]
+
+其中：
+
+\begin{itemize}
+    \item s_t：State（状态）；
+    \item a_t：Action（动作）；
+    \item \pi：Policy（策略），
+    \pi 读作 \textbf{pi（派）}。
+\end{itemize}
+
+这里与 Reinforcement Learning（强化学习）的形式很像，
+但不应该说两者完全等价。
+
+\subsection{Agent Loop}
+
+Agent 可以抽象成：
+
+\[
+\text{Observe}
+\rightarrow
+\text{Reason}
+\rightarrow
+\text{Act}
+\rightarrow
+\text{Observe}
+\rightarrow
+\cdots
+\]
+
+示意图如下。
+
+\begin{center}
+
+\begin{tikzpicture}[node distance=1cm]
+
+\node[box] (observe) {Observe\\观察};
+\node[box, right=of observe] (reason) {Reason\\判断};
+\node[box, right=of reason] (act) {Act\\行动};
+
+\node[box, below=1cm of reason] (env)
+{Environment\\环境};
+
+\draw[arrow] (observe) -- (reason);
+\draw[arrow] (reason) -- (act);
+\draw[arrow] (act) -- (env);
+\draw[arrow] (env) -| (observe);
+
+\end{tikzpicture}
+
+\end{center}
+
+\subsection{最小 Agent 代码}
+
+一个非常简化的 Agent 可以写成：
+
+\begin{lstlisting}[language=Python]
+messages = [user_query]
+
+for step in range(MAX_STEPS):
+
+    response = call_llm(
+        messages,
+        tools=tools
+    )
+
+    if response.type == "final":
+        return response.answer
+
+    if response.type == "tool_call":
+
+        result = execute_tool(
+            response.tool,
+            response.arguments
+        )
+
+        messages.append(response)
+        messages.append(result)
+\end{lstlisting}
+
+核心逻辑只有：
+
+\begin{lstlisting}[language=Python]
+while not done:
+
+    state = observe()
+
+    action = llm(state)
+
+    observation = execute(action)
+
+    update_state(observation)
+\end{lstlisting}
+
+\begin{keybox}
+Agent Framework 最核心的部分并不神秘：
+
+\[
+\boxed{
+\text{LLM}
+\rightarrow
+\text{Action}
+\rightarrow
+\text{Observation}
+\rightarrow
+\text{LLM Again}
+}
+\]
+
+也就是一个循环。
+\end{keybox}
+
+% ============================================================
+% 7. Research Agent
+% ============================================================
+
+\section{Demo：从 Workflow 到 Research Agent}
+
+\begin{outlinebox}
+这一部分建议做成 Workshop 中最重要的现场 Demo。
+
+任务：
+
+\begin{quote}
+Find representative papers about
+LLM agent planning and compare their main ideas.
+\end{quote}
+
+展示的重点不是最终答案质量，
+而是 Agent 如何根据 Observation 动态决定下一步。
+\end{outlinebox}
+
+可用 Tool：
+
+\begin{lstlisting}[language=Python]
+search_paper(query)
+
+read_paper(paper_id)
+
+save_note(content)
+\end{lstlisting}
+
+第一次：
+
+\[
+\text{Action}
+=
+\text{Search Paper}
+\]
+
+得到若干结果。
+
+Agent 判断：
+
+\begin{quote}
+当前结果主要集中在 reasoning，
+planning 相关工作不足。
+\end{quote}
+
+于是再次：
+
+\[
+\text{Action}
+=
+\text{Search Again}
+\]
+
+然后：
+
+\[
+\text{Read Paper A}
+\rightarrow
+\text{Read Paper B}
+\]
+
+接着 Agent 判断信息仍然缺少 evaluation 部分，
+再次搜索。
+
+整个执行轨迹（Trajectory）可能变成：
+
+\[
+\begin{aligned}
+&\text{Search} \\
+\rightarrow\;& \text{Read A} \\
+\rightarrow\;& \text{Read B} \\
+\rightarrow\;& \text{Search Again} \\
+\rightarrow\;& \text{Read C} \\
+\rightarrow\;& \text{Summarize}
+\end{aligned}
+\]
+
+这时和固定 Workflow 的区别就非常明显。
+
+固定 Workflow：
+
+\[
+\text{Search once}
+\rightarrow
+\text{Read}
+\rightarrow
+\text{Write}
+\]
+
+Agent：
+
+\[
+\text{根据结果决定是否再次 Search}
+\]
+
+\begin{notebox}
+如果现场网络不稳定，
+建议不要真正实时访问 Scholar 或其他网站。
+
+可以提前准备一个 Mock Tool（模拟工具），
+例如：
+
+\begin{lstlisting}[language=Python]
+def search_paper(query):
+    return mock_database[query]
+\end{lstlisting}
+
+这样既能展示 Agent Loop，
+又不会因为网络问题翻车。
+\end{notebox}
+
+% ============================================================
+% 8. ChatGPT Claude DeepSeek
+% ============================================================
+
+\section{ChatGPT、Claude、DeepSeek 网页版是不是 Agent？}
+
+这也是 Workshop 中非常容易被问到的问题。
+
+关键不是看 UI（用户界面），
+而是看内部任务执行行为。
+
+\begin{center}
+\begin{tabular}{p{0.43\textwidth}p{0.43\textwidth}}
+\toprule
+行为 & 更合理的理解 \\
+\midrule
+
+User $\rightarrow$ LLM $\rightarrow$ Answer
+&
+普通 LLM Application
+\\
+
+Search $\rightarrow$ Retrieve $\rightarrow$ Generate
+且流程固定
+&
+Workflow
+\\
+
+模型自己决定是否搜索、执行代码或读取文件
+&
+Agentic Behavior
+\\
+
+模型反复调用工具，直到认为任务完成
+&
+典型 Agent Loop
+\\
+
+\bottomrule
+\end{tabular}
+\end{center}
+
+因此，更准确的说法是：
+
+\begin{quote}
+一个现代聊天产品可能同时包含
+普通 LLM 调用、Workflow 和 Agentic Execution
+（智能体式执行）。
+\end{quote}
+
+不能简单说：
+
+\begin{quote}
+“网页版 ChatGPT 就一定是一个 Agent。”
+\end{quote}
+
+\begin{notebox}
+产品内部架构通常不是公开透明的，
+而且会不断变化。
+
+演讲时只讨论公开能力和可观察行为，
+不要断言某个商业产品内部一定使用某种具体 Agent Loop。
+\end{notebox}
+
+% ============================================================
+% 9. State Memory
+% ============================================================
+
+\section{Step 6：State 与 Memory}
+
+\begin{outlinebox}
+这一部分展示：
+
+\begin{enumerate}
+    \item Context（上下文）；
+    \item State（状态）；
+    \item Working Memory（工作记忆）；
+    \item Long-term Memory（长期记忆）；
+    \item Retrieval（检索）；
+    \item 为什么不能把所有历史全部塞进 Prompt。
+\end{enumerate}
+\end{outlinebox}
+
+\subsection{Context}
+
+Context 是模型在某一次调用时实际能够看到的信息。
+
+例如：
+
+\[
+\text{System Prompt}
++
+\text{User Query}
++
+\text{Tool Results}
++
+\text{History}
+\]
+
+\subsection{State}
+
+State 是 Agent 当前任务的结构化状态。
+
+例如：
+
+\begin{lstlisting}[language=Python]
+state = {
+    "goal": "survey LLM agents",
+    "papers_found": 12,
+    "papers_read": 5,
+    "remaining_questions": [
+        "planning",
+        "evaluation"
+    ]
+}
+\end{lstlisting}
+
+\subsection{Working Memory}
+
+Working Memory（工作记忆）
+保存当前任务执行过程中暂时需要的信息。
+
+例如：
+
+\begin{itemize}
+    \item 已经读过哪些论文；
+    \item 当前总结；
+    \item 尚未解决的问题；
+    \item 当前 Plan。
+\end{itemize}
+
+\subsection{Long-term Memory}
+
+Long-term Memory（长期记忆）
+通常意味着信息持久保存在外部系统中，例如：
+
+\begin{itemize}
+    \item Database；
+    \item Vector Database（向量数据库）；
+    \item File System；
+    \item Knowledge Base。
+\end{itemize}
+
+需要特别注意：
+
+\begin{center}
+\textbf{Vector Database 不等于 Memory 本身。}
+\end{center}
+
+它只是实现长期信息存储和 Retrieval 的一种方式。
+
+\subsection{为什么不能无限扩大 Context？}
+
+随着 Agent 执行：
+
+\[
+\text{History} \uparrow
+\]
+
+通常伴随：
+
+\[
+\text{Context Length} \uparrow
+\]
+
+以及：
+
+\[
+\text{Cost} \uparrow,
+\qquad
+\text{Latency} \uparrow
+\]
+
+同时无关信息也可能增加。
+
+因此 Agent 需要：
+
+\begin{itemize}
+    \item Retrieval（检索）；
+    \item Summarization（总结）；
+    \item Compression（压缩）；
+    \item Forgetting（遗忘）。
+\end{itemize}
+
+\begin{notebox}
+不要把 Memory 简化成：
+
+“把所有聊天历史全部塞进 Prompt”。
+
+Memory 真正涉及的问题是：
+
+\begin{itemize}
+    \item What to remember?
+    \item What to retrieve?
+    \item What to forget?
+    \item When to summarize?
+\end{itemize}
+
+这些本身也是 Agent Research 的重要问题。
+\end{notebox}
+
+% ============================================================
+% 10. Planning
+% ============================================================
+
+\section{Step 7：Planning——复杂任务如何规划}
+
+\begin{outlinebox}
+这一部分展示：
+
+\begin{enumerate}
+    \item Planning（规划）的意义；
+    \item ReAct；
+    \item Plan-and-Execute；
+    \item Research Task 的 Plan 示例。
+\end{enumerate}
+\end{outlinebox}
+
+如果 Agent 每次只考虑：
+
+\[
+\text{下一步做什么？}
+\]
+
+对于 Long-Horizon Task（长时程任务）
+可能容易出现方向漂移。
+
+因此可以显式加入 Planning。
+
+\subsection{ReAct}
+
+ReAct 可以简化理解为：
+
+\[
+\text{Reason}
+\rightarrow
+\text{Act}
+\rightarrow
+\text{Observe}
+\rightarrow
+\text{Reason}
+\]
+
+即：
+
+\[
+\text{Reasoning}
++
+\text{Acting}
+\]
+
+但现代系统不一定会把内部 Reasoning
+显式打印出来。
+
+核心不是有没有显示 Thought，
+而是：
+
+\[
+\text{Decision}
+\leftrightarrow
+\text{Environment Feedback}
+\]
+
+\subsection{Plan-and-Execute}
+
+另一种思路是先生成 Plan。
+
+例如：
+
+\begin{enumerate}
+    \item 定义研究范围；
+    \item 生成搜索关键词；
+    \item 搜索论文；
+    \item 筛选论文；
+    \item 提取 Method / Dataset / Result；
+    \item 按技术路线分类；
+    \item 找出缺失方向；
+    \item 再次搜索；
+    \item 生成报告。
+\end{enumerate}
+
+然后 Executor（执行器）逐步完成任务。
+
+关键是：
+
+\begin{center}
+Plan 也可以根据 Observation 动态修改。
+\end{center}
+
+这就是 Re-planning（重新规划）。
+
+\begin{notebox}
+这里不建议展开 Tree of Thoughts、
+Monte Carlo Tree Search 等高级 planning 方法。
+
+因为 Workshop 的目标是“搭 Agent”，
+而不是做 Agent Planning Survey。
+\end{notebox}
+
+% ============================================================
+% 11. Reflection
+% ============================================================
+
+\section{Step 8：Reflection 与 Critic}
+
+\begin{outlinebox}
+这一部分展示：
+
+\begin{enumerate}
+    \item 为什么一次生成不够可靠；
+    \item Critic（评审模块）；
+    \item Environment Feedback（环境反馈）；
+    \item Coding Agent；
+    \item Writing Agent。
+\end{enumerate}
+\end{outlinebox}
+
+最简单的生成流程是：
+
+\[
+\text{Generate}
+\rightarrow
+\text{Finish}
+\]
+
+更强的 Agent 可以：
+
+\[
+\text{Generate}
+\rightarrow
+\text{Evaluate}
+\rightarrow
+\text{Revise}
+\]
+
+\subsection{Coding Agent}
+
+Coding 场景尤其适合 Agent。
+
+\begin{center}
+
+\begin{tikzpicture}[node distance=0.65cm]
+
+\node[box] (g) {Generate Code};
+\node[box, right=of g] (r) {Run Tests};
+\node[box, right=of r] (e) {Observe Error};
+
+\node[box, below=1cm of e] (a) {Analyze};
+\node[box, left=of a] (m) {Modify};
+
+\draw[arrow] (g) -- (r);
+\draw[arrow] (r) -- (e);
+\draw[arrow] (e) -- (a);
+\draw[arrow] (a) -- (m);
+\draw[arrow] (m) -| (r);
+
+\end{tikzpicture}
+
+\end{center}
+
+环境可以提供明确反馈：
+
+\begin{itemize}
+    \item Syntax Error；
+    \item Compiler Error；
+    \item Runtime Error；
+    \item Unit Test Failure。
+\end{itemize}
+
+因此 Agent 可以：
+
+\[
+\text{写代码}
+\rightarrow
+\text{运行}
+\rightarrow
+\text{观察错误}
+\rightarrow
+\text{修改}
+\]
+
+\subsection{Writing Agent}
+
+论文写作也可以类似：
+
+\[
+\text{Draft}
+\rightarrow
+\text{Critique}
+\rightarrow
+\text{Verify}
+\rightarrow
+\text{Revise}
+\]
+
+Critic 可以检查：
+
+\begin{itemize}
+    \item Logical Consistency；
+    \item Citation；
+    \item Missing Evidence；
+    \item Writing Quality。
+\end{itemize}
+
+但需要强调：
+
+\begin{center}
+\textbf{LLM Critic 并不天然可靠。}
+\end{center}
+
+真正更有价值的是
+Verifiable Feedback（可验证反馈）。
+
+例如：
+
+\begin{itemize}
+    \item Unit Test；
+    \item Compiler；
+    \item Calculator；
+    \item Database；
+    \item Retrieved Source。
+\end{itemize}
+
+\begin{notebox}
+这里可以举 Claude Code、Codex 等 Coding Agent
+作为现实产品例子。
+
+但仍然只讨论其公开可观察行为：
+
+读取文件、修改代码、执行命令、读取错误、继续修改。
+
+不要推断它们内部完整实现。
+\end{notebox}
+
+% ============================================================
+% 12. Multi-Agent
+% ============================================================
+
+\section{Step 9：Multi-Agent}
+
+\begin{outlinebox}
+这一部分控制在 3--4 分钟。
+
+展示：
+
+\begin{enumerate}
+    \item Multi-Agent（多智能体）是什么；
+    \item Manager--Worker；
+    \item Role Specialization；
+    \item 为什么“多调用几次 LLM”不等于 Multi-Agent。
+\end{enumerate}
+\end{outlinebox}
+
+一个典型结构：
+
+\begin{center}
+
+\begin{tikzpicture}[node distance=1cm]
+
+\node[box] (manager) {Manager};
+
+\node[box, below left=1.2cm and 2cm of manager]
+(research)
+{Researcher};
+
+\node[box, below=1.2cm of manager]
+(coder)
+{Coder};
+
+\node[box, below right=1.2cm and 2cm of manager]
+(review)
+{Reviewer};
+
+\node[box, below=1.2cm of coder]
+(output)
+{Final Output};
+
+\draw[arrow] (manager) -- (research);
+\draw[arrow] (manager) -- (coder);
+\draw[arrow] (manager) -- (review);
+
+\draw[arrow] (research) -- (output);
+\draw[arrow] (coder) -- (output);
+\draw[arrow] (review) -- (output);
+
+\end{tikzpicture}
+
+\end{center}
+
+Multi-Agent 比较有意义的场景：
+
+\begin{itemize}
+    \item Role Specialization（角色专业化）；
+    \item Information Isolation（信息隔离）；
+    \item Parallel Execution（并行执行）；
+    \item Independent Verification（独立验证）。
+\end{itemize}
+
+如果三个 Agent：
+
+\begin{itemize}
+    \item 使用相同模型；
+    \item 拿到完全相同 Context；
+    \item 使用相同 Prompt；
+    \item 做完全相同任务；
+\end{itemize}
+
+那么它可能只是：
+
+\[
+\text{把 LLM 调用三次}
+\]
+
+而不是结构上真正有价值的 Multi-Agent。
+
+% ============================================================
+% 13. Framework
+% ============================================================
+
+\section{Step 10：什么时候才需要 Agent Framework}
+
+\begin{outlinebox}
+这一部分展示：
+
+\begin{enumerate}
+    \item 为什么简单的 while loop 不够；
+    \item Framework 解决的 Engineering Problem；
+    \item LangGraph；
+    \item OpenAI Agents SDK；
+    \item 为什么学习 Agent 不应该从框架开始。
+\end{enumerate}
+\end{outlinebox}
+
+我们前面的最小 Agent：
+
+\begin{lstlisting}[language=Python]
+while not done:
+
+    action = llm(state)
+
+    result = execute(action)
+
+    update(state, result)
+\end{lstlisting}
+
+已经包含了 Agent 的核心机制。
+
+但真正系统还需要：
+
+\begin{itemize}
+    \item State Management；
+    \item Retry；
+    \item Timeout；
+    \item Checkpoint；
+    \item Persistence；
+    \item Logging；
+    \item Tracing；
+    \item Human-in-the-loop；
+    \item Parallel Execution；
+    \item Permission Control；
+    \item Error Recovery。
+\end{itemize}
+
+这才是 Agent Framework 的主要意义。
+
+可以把 Framework 理解成：
+
+\[
+\text{Agent Logic}
++
+\text{Engineering Infrastructure}
+\]
+
+常见工具包括：
+
+\begin{itemize}
+    \item LangGraph；
+    \item OpenAI Agents SDK；
+    \item LangChain；
+    \item AutoGen；
+    \item CrewAI。
+\end{itemize}
+
+\begin{keybox}
+学习顺序建议是：
+
+\[
+\text{自己写最小 Agent Loop}
+\]
+
+然后：
+
+\[
+\text{理解 State / Tool / Planning}
+\]
+
+最后才：
+
+\[
+\text{学习 Framework}
+\]
+
+而不是反过来。
+\end{keybox}
+
+\begin{notebox}
+Agent Framework 更新速度非常快。
+
+Workshop 不要花时间教：
+
+“某个框架某个 API 参数怎么写”。
+
+半年以后 API 可能已经变化。
+
+真正长期有效的是：
+
+\begin{itemize}
+    \item Tool；
+    \item State；
+    \item Agent Loop；
+    \item Planning；
+    \item Feedback；
+    \item Evaluation。
+\end{itemize}
+\end{notebox}
+
+% ============================================================
+% 14. Failure
+% ============================================================
+
+\section{Agent 为什么容易失败？}
+
+\begin{outlinebox}
+这一部分用于避免 Workshop 变成单纯“宣传 Agent”。
+
+主要展示：
+
+\begin{enumerate}
+    \item Error Accumulation；
+    \item Tool Error；
+    \item Infinite Loop；
+    \item Context Growth；
+    \item Cost；
+    \item Evaluation。
+\end{enumerate}
+\end{outlinebox}
+
+\subsection{Error Accumulation}
+
+假设为了简单说明，
+每一步成功概率都是：
+
+\[
+p = 0.95
+\]
+
+并且假设不同步骤之间独立。
+
+那么 20 步全部成功的概率：
+
+\[
+p^{20}
+=
+0.95^{20}
+\approx
+0.36
+\]
+
+这说明 Long-Horizon Task
+很容易发生误差累积。
+
+但需要明确：
+
+\begin{quote}
+现实 Agent 中不同步骤并不独立，
+这个计算只是直观示例。
+\end{quote}
+
+\subsection{常见 Failure Mode}
+
+包括：
+
+\begin{itemize}
+    \item Wrong Tool；
+    \item Wrong Arguments；
+    \item Misread Observation；
+    \item Goal Drift；
+    \item Infinite Loop；
+    \item Context Explosion；
+    \item Excessive Cost。
+\end{itemize}
+
+因此系统通常必须设置：
+
+\begin{lstlisting}[language=Python]
+MAX_STEPS = 20
+
+TIMEOUT = 300
+
+TOKEN_BUDGET = ...
+
+COST_BUDGET = ...
+
+ALLOWED_TOOLS = [...]
+\end{lstlisting}
+
+并加入：
+
+\begin{itemize}
+    \item Sandbox；
+    \item Permission Control；
+    \item Input Validation；
+    \item Human Approval；
+    \item Logging / Tracing。
+\end{itemize}
+
+\begin{keybox}
+Autonomous（自主）
+
+并不意味着
+
+Uncontrolled（不受控制）。
+\end{keybox}
+
+% ============================================================
+% 15. Evaluation
+% ============================================================
+
+\section{Agent 应该如何评价？}
+
+不能只看：
+
+\begin{quote}
+“最终回答看起来不错。”
+\end{quote}
+
+至少应该评价：
+
+\begin{itemize}
+    \item Task Success Rate（任务成功率）；
+    \item Tool-call Accuracy（工具调用准确率）；
+    \item Planning Quality（规划质量）；
+    \item Robustness（鲁棒性）；
+    \item Number of Steps（执行步数）；
+    \item Token Usage；
+    \item Latency（延迟）；
+    \item Monetary Cost（实际成本）。
+\end{itemize}
+
+对于科研而言，还有一个非常重要的问题：
+
+\[
+\text{Performance Gain}
+=
+?
+\]
+
+提升究竟来自：
+
+\[
+\text{Stronger LLM}
+\]
+
+还是：
+
+\[
+\text{Better Agent Architecture}
+\]
+
+这也是 Agent Research 中值得研究的问题。
+
+% ============================================================
+% 16. 总结
+% ============================================================
+
+\section{总结：从 API 到 Agent 的完整演化}
+
+整个过程可以重新总结为：
+
+\[
+\boxed{
+\text{API}
+}
+\]
+
+模型只能生成文本。
+
+\vspace{0.2cm}
+
+\[
+\downarrow
+\]
+
+\[
+\boxed{
+\text{Structured Output}
+}
+\]
+
+模型开始输出程序能够理解的 Decision。
+
+\vspace{0.2cm}
+
+\[
+\downarrow
+\]
+
+\[
+\boxed{
+\text{Tool Calling}
+}
+\]
+
+模型可以决定调用外部能力。
+
+\vspace{0.2cm}
+
+\[
+\downarrow
+\]
+
+\[
+\boxed{
+\text{Workflow}
+}
+\]
+
+多个步骤被组织起来。
+
+\vspace{0.2cm}
+
+\[
+\downarrow
+\]
+
+\[
+\boxed{
+\text{Agent Loop}
+}
+\]
+
+模型根据 Observation 动态决定下一步。
+
+\vspace{0.2cm}
+
+\[
+\downarrow
+\]
+
+\[
+\boxed{
+\text{State + Memory}
+}
+\]
+
+Agent 能够维护长期任务。
+
+\vspace{0.2cm}
+
+\[
+\downarrow
+\]
+
+\[
+\boxed{
+\text{Planning + Reflection}
+}
+\]
+
+Agent 开始处理复杂任务并利用反馈改进。
+
+\vspace{0.2cm}
+
+\[
+\downarrow
+\]
+
+\[
+\boxed{
+\text{Multi-Agent + Framework}
+}
+\]
+
+系统进一步工程化和规模化。
+
+\newpage
+
+\section*{最后建议}
+
+如果一个同学明天准备自己搭一个 Agent，
+最推荐的学习路线是：
+
+\begin{enumerate}
+    \item 写通一个 LLM API；
+    \item 让模型返回 Structured Output；
+    \item 写两个简单 Tool；
+    \item 手写一个 Agent Loop；
+    \item 加 State；
+    \item 加 Memory；
+    \item 加 Planning；
+    \item 加 Feedback；
+    \item 最后再学习 LangGraph 等 Framework。
+\end{enumerate}
+
+最后可以用一句话结束：
+
+\begin{quote}
+如果以后看到任何新的 Agent 系统，
+先把它拆开看：
+
+模型是什么？
+
+工具是什么？
+
+状态在哪里？
+
+谁决定下一步？
+
+循环如何停止？
+
+拆完以后，大部分 Agent 系统其实没有那么神秘。
+\end{quote}
+
+\end{document}
+
+现在帮我想一下用什么Demo演示最合适，给出几个备选，并说明需要调用哪些tool，是现有的还是要自己写
+展开
+思考了 28s
+
+你这套 Workshop 的逻辑已经很适合做“同一个任务逐步进化”的 Demo 了。与其每一节换一个完全不同的例子，我更建议选一个主 Demo，从 API → Structured Output → Tool Calling → Workflow → Agent Loop 一路升级，最后再展示 Memory / Planning / Reflection。
+
+我会按下面优先级选。
+
+1. 最推荐：商业调研 Agent
+Demo 任务
+
+例如：
+
+“假设我们准备推出一款面向香港大学生的 AI 学习工具。请调研主要竞争产品，比较价格、核心功能和目标用户，并给出进入市场的初步建议。”
+
+这个任务非常适合商科同学，因为它天然包含：
+
+搜索→筛选→比较→发现信息缺口→继续搜索→分析
+
+也就天然适合展示 Agent Loop。
+
+可以给 Agent 的 Tools
+Tool	作用	建议
+web_search(query)	搜索竞争产品	现成工具
+calculator(expression)	算价格差异、市场指标	自己写，5 行代码
+save_note(content)	保存调研结果	自己写
+read_notes()	查看已有结果	自己写
+finish_report()	返回最终报告	不一定需要 Tool
+
+目前 OpenAI 的 Responses API / Agents SDK 本身已经提供 Hosted Web Search、File Search、Code Interpreter 等工具，所以真正开发时 web_search 不需要你自己实现搜索引擎。Agents SDK 也支持把普通 Python 函数直接包装成 Function Tool。
+OpenAI
++1
+
+因此课堂代码可以非常简单：
+
+Python
+运行
+def calculator(expression: str):
+    return eval(expression)
+
+def save_note(content: str):
+    notes.append(content)
+    return "saved"
+
+然后：
+
+Python
+运行
+tools = [
+    web_search,
+    calculator,
+    save_note
+]
+最精彩的地方
+
+你不要告诉 Agent：
+
+搜索 A → 搜索 B → 搜索 C → 做表格。
+
+只告诉它：
+
+完成这个竞争分析，必要时使用工具，信息充分之后给出结论。
+
+这样现场就能观察到类似：
+
+1. search: AI study tools for university students
+2. search: ChatGPT education pricing
+3. search: Perplexity education pricing
+4. save_note
+5. search: NotebookLM student features
+6. calculator
+7. final answer
+
+关键就在于：
+
+第 5 步是否发生，是模型根据前 4 步 Observation 决定的。
+
+这一下就能把：
+
+Workflow
+
+和
+
+Agent
+
+讲明白。
+
+推荐指数
+
+★★★★★
+
+这是我最推荐的主 Demo。
+
+2. 非常推荐：CSV 商业数据分析 Agent
+
+这个甚至可能比 Research Agent 更稳定。
+
+假设你提前准备一个：
+
+sales.csv
+
+例如：
+
+Region	Product	Revenue	Cost	Customers
+HK	A	120000	80000	320
+SZ	A	180000	150000	600
+HK	B	90000	40000	200
+...	...	...	...	...
+
+然后问：
+
+“分析这家公司销售表现，找出最值得管理层关注的三个问题。如果需要，自己选择分析方法。”
+
+Tools
+
+可以设计：
+
+Python
+运行
+get_schema()
+
+run_python(code)
+
+calculate(expression)
+
+save_note(content)
+
+或者：
+
+Python
+运行
+run_sql(query)
+哪些是现成的？
+
+如果你直接使用 OpenAI 的工具：
+
+Code Interpreter：现成
+
+File Search：现成
+
+Python 数据分析能力：可以直接通过 Code Interpreter 完成
+
+当前 Agents SDK 已明确支持 OpenAI 托管的 Code Interpreter 和 File Search。
+OpenAI
++1
+
+但为了教学，我反而建议你自己封一个：
+
+Python
+运行
+def run_sql(query):
+    return duckdb.sql(query).df()
+
+这样听众更容易理解：
+
+Tool 本质上就是一个普通函数。
+
+而不是误以为：
+
+“Agent Tool 是某种非常神秘的 AI 技术。”
+
+Agent 可能产生这样的轨迹
+observe dataset schema
+
+→ calculate revenue by region
+
+→ discover Shenzhen revenue is high but margin is low
+
+→ calculate margin by product
+
+→ discover Product A drives the problem
+
+→ inspect Product A by region
+
+→ final analysis
+
+这个例子特别适合讲：
+
+Observation→Action→New Observation
+最大优势
+
+几乎不会因为网络翻车。
+
+你的 CSV 是固定的。
+
+每次结果基本可复现。
+
+推荐指数
+
+★★★★★
+
+如果你特别担心 Workshop 现场网络，我甚至会把它作为 主 Demo。
+
+3. 商科味最浓：Investment / Company Analysis Agent
+
+例如：
+
+Compare Apple, Microsoft and Nvidia based on revenue growth, profitability and valuation, and recommend which company deserves further investigation.
+
+工具：
+
+web_search
+get_financial_data
+calculator
+save_note
+
+其中：
+
+web_search
+
+现成。
+
+calculator
+
+自己写即可。
+
+get_financial_data
+
+有两种方法。
+
+自己写：
+
+Python
+运行
+def get_financial_data(ticker):
+    ...
+
+底层接：
+
+Yahoo Finance
+
+Alpha Vantage
+
+FMP
+
+其他金融 API
+
+或者演示时直接准备 Mock Data。
+
+它的 Agent Loop 很漂亮：
+
+Search company financials
+
+↓
+发现不同来源年份不一致
+
+↓
+Search annual report
+
+↓
+读取数据
+
+↓
+Calculate growth rate
+
+↓
+发现 Nvidia 盈利变化异常明显
+
+↓
+进一步查询原因
+
+↓
+Generate comparison
+
+商科同学会非常容易产生代入感。
+
+但我不建议你作为第一选择。
+
+原因是：
+
+金融数据时间口径非常容易出问题。
+
+FY2025、TTM、calendar year、GAAP、adjusted earnings 混在一起之后，Demo 会从：
+
+Agent 教学
+
+变成：
+
+为什么 Yahoo Finance 和财报数字不一样。
+
+推荐指数
+
+★★★★☆
+
+适合作为“Agent 可以干什么”的展示，不太适合第一场 Workshop 的核心 Demo。
+
+4. 最稳定：差旅规划 Agent
+
+例如：
+
+“一个员工下周去上海出差三天，预算 5000 元。安排住宿、交通和每天行程，并保证总预算不超过 5000。”
+
+Tools：
+
+Python
+运行
+search_flight()
+search_hotel()
+search_restaurant()
+calculator()
+
+课堂上最好全部使用 Mock Tool：
+
+Python
+运行
+def search_hotel(city):
+    return [
+        {"hotel": "A", "price": 600},
+        {"hotel": "B", "price": 850},
+        {"hotel": "C", "price": 1200},
+    ]
+
+Agent：
+
+search flight
+↓
+search hotel
+↓
+calculate total cost
+↓
+发现超预算
+↓
+重新搜索 cheaper hotel
+↓
+calculate again
+↓
+finish
+
+这其实是一个非常标准的 Agent 教材案例。
+
+因为它清楚展示：
+
+Action→Observation→Re−plan
+
+特别是：
+
+第一次计划失败 → 根据环境结果调整
+
+比单纯搜索论文更有“Agent 感”。
+
+推荐指数
+
+★★★★☆
+
+优点是极其稳定。
+
+缺点是科研味稍弱。
+
+5. 最贴近你前面的内容：Literature Review Agent
+
+也就是你现在讲义里的：
+
+Find representative papers about LLM Agent Planning and compare them.
+
+Tools：
+
+Python
+运行
+search_paper(query)
+read_paper(id)
+save_note(note)
+
+问题在于 search_paper()。
+
+这个东西其实并没有一个特别完美的通用“现成 Agent Tool”。
+
+你可以接：
+
+Semantic Scholar API；
+
+OpenAlex API；
+
+arXiv API；
+
+Crossref；
+
+普通 Web Search。
+
+我更建议 Demo 使用：
+
+Python
+运行
+web_search(query)
+
+而不是现场接 Google Scholar。
+
+因为 Scholar 自动访问容易遇到限制。
+
+课堂可以这样展示
+
+Agent：
+
+search "LLM agent planning"
+
+Observation：
+
+结果：
+ReAct
+Reflexion
+Tree of Thoughts
+...
+
+Agent：
+
+目前这些论文主要关于 reasoning。
+需要进一步搜索 explicit planning。
+
+然后：
+
+search "LLM agent plan and execute"
+
+这就是非常漂亮的一次：
+
+Observation→Replanning
+推荐指数
+
+★★★★☆
+
+最适合 PhD Workshop，但对纯商科同学来说不如“商业调研”直观。
+
+6. Reflection 最好的 Demo：代码修复 Agent
+
+这是展示 Reflection / Feedback 最好的案例。
+
+任务：
+
+修复一个有 bug 的 Python 程序。
+
+Tools：
+
+read_file
+edit_file
+run_python
+run_tests
+
+Agent：
+
+Read code
+↓
+Edit code
+↓
+Run test
+↓
+Fail
+↓
+Read error
+↓
+Edit again
+↓
+Run test
+↓
+Pass
+
+这几乎完美对应你的：
+
+Generate→Evaluate→Revise
+
+而且 Feedback 是：
+
+AssertionError
+
+而不是：
+
+“我觉得这篇文章写得不好。”
+
+所以是 Verifiable Feedback（可验证反馈）。
+
+现在的 Agents SDK 也已经支持 shell、computer、function tools 等不同形式的执行工具；不过课堂上自己写 run_tests() 会更容易解释。
+OpenAI
++1
+
+但问题也明显：
+
+你的听众是商科学生。
+
+可能有人根本不懂 Python。
+
+所以可以拿它作为 Reflection 部分的 2 分钟演示，不要当主 Demo。
+
+我实际最建议你设计成“两套 Demo”
+
+不要试图用一个 Demo 展示所有东西。
+
+主 Demo：商业调研 Agent
+
+贯穿：
+
+API→Structured Output→Tool→Workflow→Agent
+
+任务：
+
+调研一个 AI 学习产品市场。
+
+Tools：
+
+web_search        # 现成
+calculator        # 自己写
+save_note         # 自己写
+read_note         # 自己写
+
+足够了。
+
+辅助 Demo：CSV Analysis Agent
+
+用来展示：
+
+State+Planning+Feedback
+
+Tools：
+
+get_schema        # 自己写
+run_sql           # 自己写
+calculator        # 自己写
+
+或者直接：
+
+Code Interpreter  # 现成
+
+这样即使现场网络挂了，你还有完全离线的 Demo。
+
+我甚至建议你不要一开始使用 Agents SDK
+
+你的 Workshop 核心就是：
+
+从零开始理解 Agent。
+
+所以第一版 Demo 最好自己手写 Loop。
+
+例如整个 Agent Framework 就是：
+
+Python
+运行
+messages = [
+    {"role": "user", "content": task}
+]
+
+for step in range(10):
+
+    response = call_llm(
+        messages,
+        tools=TOOLS
+    )
+
+    if response.final_answer:
+        print(response.final_answer)
+        break
+
+    for tool_call in response.tool_calls:
+
+        result = execute_tool(
+            tool_call.name,
+            tool_call.arguments
+        )
+
+        messages.append(tool_call)
+        messages.append({
+            "role": "tool",
+            "content": str(result)
+        })
+
+告诉大家：
+
+这就是我们今天真正搭出来的 Agent。
+
+然后最后 5 分钟再把它换成：
+
+Python
+运行
+agent = Agent(
+    instructions="...",
+    tools=[...]
+)
+
+result = Runner.run(...)
+
+此时大家马上会理解 Framework 到底帮你做了什么。
+
+OpenAI 自己目前的 Agents SDK 文档也明确区分了这两种方式：如果开发者希望自己控制 Agent Loop，可以直接使用 Responses API；如果使用 Agent + Runner，SDK 会帮你处理 turn、tool、handoff、session 等 orchestration。
+OpenAI
++1
+
+这个正好能成为你 Framework 那一节最漂亮的收尾。
+
+最终我会这样排
+Demo	商科相关	Agent 特征	稳定性	推荐用途
+商业调研 Agent	★★★★★	★★★★★	★★★★	主 Demo
+CSV 分析 Agent	★★★★★	★★★★	★★★★★	主/备用 Demo
+Literature Agent	★★★	★★★★★	★★★	PhD 场景
+差旅规划 Agent	★★★★	★★★★★	★★★★★	教学 Demo
+Company Analysis	★★★★★	★★★★	★★★	商学院拓展
+Coding Agent	★★	★★★★★	★★★★★	Reflection Demo
+
+如果只能做一个，我选“商业调研 Agent”；如果准备两个，我选“商业调研 + CSV 分析”。
+
+而且 Tool 不要多，3–4 个最合适。Tool 太多之后，听众注意力会从“Agent Loop”转移到各种 API 上。
+
+下一步最值得做的是直接把这个 商业调研 Agent Demo 拆成 5 个版本：普通 API → JSON → Tool Calling → 固定 Workflow → 真 Agent Loop。这样正好可以一段代码逐步修改，和你现在的讲义结构一一对应。
+
+分析如下3个主Demo是否合适：1，某个主题的PPT制作。2，类似claude code的代码agent。3，论文撰写/修改类agent
+
+这三个都可以，但适合作为“主 Demo”的程度不一样。关键要看它们能不能清晰体现：
+
+模型决策→调用工具→观察结果→继续决策
+
+而不是仅仅“让 AI 做了一件复杂的事”。
+
+我会这样排：
+
+Demo	商科同学易懂	Agent 特征明显	现场可控性	与你讲义匹配	主 Demo 推荐
+PPT 制作 Agent	★★★★★	★★★★☆	★★★★☆	★★★★★	★★★★★
+Claude Code 类代码 Agent	★★☆☆☆	★★★★★	★★★★★	★★★★★	★★★★☆
+论文撰写/修改 Agent	★★★★☆	★★★★☆	★★★☆☆	★★★★★	★★★★☆
+1. 某个主题的 PPT 制作 Agent
+很适合作为主 Demo
+
+这是三个里面我最推荐给商科 PhD Workshop做主 Demo 的。
+
+原因不是 PPT 本身，而是它可以非常自然地展示整个演化过程。
+
+例如任务：
+
+“为一个关于 AI 对消费者行为影响的 8 页课堂汇报制作 PPT。”
+
+Step 1：普通 API
+
+直接：
+
+请给我生成一个 8 页 PPT 的内容
+
+模型只能返回文本。
+
+你可以立刻问同学：
+
+这算 Agent 吗？
+
+显然不是。
+
+Step 2：Structured Output（结构化输出）
+
+让模型输出：
+
+JSON
+{
+  "title": "...",
+  "slides": [
+    {
+      "title": "...",
+      "content": [...]
+    }
+  ]
+}
+
+这时它已经从“写文字”变成了“生成程序可以执行的结构”。
+
+Step 3：Tool Calling（工具调用）
+
+给它工具：
+
+search_web(query)
+generate_image(prompt)
+create_slide(title, content)
+
+模型开始决定：
+
+哪一页要搜索资料；
+
+哪一页需要图；
+
+哪一页只需要文本。
+
+这时 Agent 特征开始明显。
+
+Step 4：Workflow（工作流）
+
+你可以故意先写死：
+
+生成大纲
+→ 搜索资料
+→ 写每页内容
+→ 生成图片
+→ 生成 PPT
+
+这是非常典型的 Workflow（工作流）。
+
+然后问：
+
+如果某一页搜索不到资料怎么办？
+
+这就自然引出 Agent。
+
+Step 5：Agent Loop（智能体循环）
+
+真正的 Agent 可以：
+
+先生成大纲
+
+→ 判断第 3 页需要数据
+→ Search
+
+→ 判断搜索结果不够
+→ Search Again
+
+→ 判断第 5 页需要示意图
+→ Generate Image
+
+→ 生成 PPT
+
+→ 检查发现一页文字过多
+→ Rewrite Slide
+
+→ Finish
+
+这里非常漂亮，因为：
+
+不同页面可以触发不同动作。
+
+这就是：
+
+下一步不是程序员写死的，而是模型根据当前状态（State）决定的。
+
+它还能自然覆盖 Reflection
+
+例如增加工具：
+
+render_ppt()
+inspect_slide()
+rewrite_slide()
+
+Agent 可以：
+
+Generate PPT
+→ Render
+→ Inspect
+→ 发现文字溢出
+→ Rewrite
+→ Render again
+
+这就是很典型的：
+
+Reflection / Feedback Loop（反思 / 反馈循环）。
+
+需要哪些 Tool？
+
+推荐：
+
+web_search(query)          现成
+generate_image(prompt)     现成
+create_ppt(slides)         自己写
+render_ppt(file)           自己写
+inspect_slide(image)       可用多模态模型
+save_state()               自己写
+
+其中真正需要你自己开发的核心，其实只有：
+
+create_ppt()
+
+可以用 python-pptx。
+
+如果只是教学 Demo，甚至可以把 PPT 生成工具包装成：
+
+Python
+运行
+def create_presentation(slides):
+    ...
+
+模型完全不需要知道里面怎么实现。
+
+最大优势
+
+听众能直接看到最终产物。
+
+相比：
+
+Agent 调了 7 次 API
+
+一份真的生成出来的 PPT 会有明显更强的展示效果。
+
+最大问题
+
+不要把重点搞成：
+
+“AI 怎么做漂亮 PPT”。
+
+否则大家会注意模板、字体、图片、美观，而不是 Agent。
+
+所以你的讲解应该始终围绕：
+
+为什么这一页选择搜索？
+
+为什么这里重新生成？
+
+谁决定下一步？
+
+而不是 PPT 美化。
+
+2. 类似 Claude Code 的代码 Agent
+从 Agent 教学角度，这是最标准的 Demo
+
+如果只评价“这个 Demo 能不能解释 Agent”，代码 Agent 是三个里面最强的。
+
+因为 Coding Agent（代码智能体）天然拥有一个非常完整的 Agent Loop：
+
+Read File
+→ Understand
+→ Edit
+→ Run
+→ Error
+→ Read Error
+→ Edit Again
+→ Test
+→ Finish
+
+它几乎就是 Agent 教科书。
+
+非常适合展示 Tool Calling
+
+工具特别清晰：
+
+read_file(path)
+write_file(path, content)
+run_command(command)
+run_tests()
+list_files()
+
+而且这些工具全都很好解释。
+
+例如：
+
+Python
+运行
+def read_file(path):
+    with open(path) as f:
+        return f.read()
+
+同学马上就能理解：
+
+Tool 本质上就是程序暴露给模型的函数。
+
+Reflection 特别强
+
+代码场景的一个巨大优势是有：
+
+Verifiable Feedback（可验证反馈）。
+
+例如：
+
+pytest
+
+返回：
+
+FAILED
+Expected 10
+Got 8
+
+模型不需要“主观认为”自己代码错了。
+
+环境直接告诉它：
+
+你错了。
+
+于是：
+
+Action
+→ Observation
+→ Correct Action
+
+非常清楚。
+
+这正好支撑你讲义里的观点：
+
+Reflection 最有价值的地方不是“让 LLM 自己批评自己”，而是利用外部可验证反馈。
+
+也非常适合解释 State
+
+State 可以是：
+
+Python
+运行
+{
+    "goal": "fix failing tests",
+    "files_read": [...],
+    "files_modified": [...],
+    "test_result": "...",
+    "remaining_errors": [...]
+}
+
+所以：
+
+State
+
+Tool
+
+Loop
+
+Reflection
+
+Planning
+
+几乎全部能覆盖。
+
+但最大问题：受众
+
+你的听众是商科学生。
+
+如果你现场出现：
+
+pytest
+stack trace
+dependency
+virtual environment
+AST
+
+很多人的注意力会从：
+
+什么是 Agent？
+
+变成：
+
+这段 Python 在干什么？
+
+这会降低教学效果。
+
+所以我不建议拿：
+
+修复大型 GitHub Repository
+
+来作为主 Demo。
+
+建议做一个极简版本：
+
+Python
+运行
+def calculate_profit(revenue, cost):
+    return revenue + cost
+
+测试：
+
+Python
+运行
+assert calculate_profit(100, 60) == 40
+
+然后 Agent：
+
+read file
+→ run test
+→ test failed
+→ inspect code
+→ modify +
+  to -
+→ test again
+→ pass
+
+商科同学即使不懂编程，也能看懂。
+
+Tool 实现
+
+几乎都需要自己写 wrapper（包装函数），但非常简单：
+
+read_file       自己写
+write_file      自己写
+run_python      自己写
+run_tests       自己写
+
+底层能力全部是操作系统原生的，所以不依赖额外服务。
+
+推荐定位
+
+我更建议：
+
+作为 Reflection 那一节的第二 Demo。
+
+大约 5 分钟。
+
+而不是贯穿整场 Workshop。
+
+3. 论文撰写 / 修改 Agent
+
+这个其实和你的 PhD Workshop 场景非常契合。
+
+尤其因为听众都是研究生。
+
+但需要分成两种：
+
+A. 论文生成 Agent
+
+例如：
+
+根据这些论文写 Introduction。
+
+B. 论文修改 Agent
+
+例如：
+
+检查并改进 Introduction，同时验证 citation 是否支持对应 statement。
+
+我强烈更推荐 B：论文修改 Agent。
+
+因为“从零写论文”很容易退化成：
+
+Prompt
+→ Generate text
+
+Agent 特征反而不明显。
+
+更好的任务：Reviewer Response Agent
+
+例如输入：
+
+Reviewer:
+The novelty over prior LLM-based recommendation work is unclear.
+Please better position the contribution relative to CoLLM and LLaRA.
+
+给 Agent：
+
+paper.tex
+references/
+reviewer_comments.txt
+
+Tools：
+
+search_paper()
+read_paper()
+search_in_latex()
+edit_latex()
+compile_latex()
+
+Agent：
+
+Read reviewer comment
+
+→ Search current Introduction
+
+→ Find CoLLM and LLaRA citations
+
+→ Read related papers
+
+→ Determine difference
+
+→ Rewrite paragraph
+
+→ Compile LaTeX
+
+→ Compiler reports citation error
+
+→ Fix citation
+
+→ Compile again
+
+→ Finish
+
+这个 Demo 非常强。
+
+因为它同时包含：
+
+Research
+search / retrieve / read
+Writing
+rewrite
+Tool
+edit LaTeX
+Feedback
+LaTeX compiler
+Reflection
+检查修改是否回答 reviewer
+State
+哪些 reviewer comments 已解决
+
+非常完整。
+
+一个更适合商科同学的版本
+
+你甚至不需要用自己的 CS 论文。
+
+可以给一段非常简单的商业论文 Introduction：
+
+Prior studies have examined the impact of online reviews
+on consumer decisions...
+
+Reviewer：
+
+The motivation is weak and the distinction from previous literature is unclear.
+
+Agent：
+
+read manuscript
+→ identify target paragraph
+→ search cited literature
+→ rewrite
+→ check citations
+→ produce diff
+
+这就很容易理解。
+
+它最大的问题是“验证比较困难”
+
+论文 Agent 和 Coding Agent 最大区别就在这里。
+
+Coding：
+
+Test Passed
+
+是一个非常强的 Objective Feedback（客观反馈）。
+
+但 Writing：
+
+This paragraph is now better.
+
+很主观。
+
+如果让同一个 LLM：
+
+写
+→ 自己评价
+→ 自己修改
+
+其实 Reflection 的说服力没有那么强。
+
+因此最好加入外部反馈：
+
+Citation Verification
+statement
+→ retrieved paper
+→ check whether source supports statement
+LaTeX Compiler
+latex
+→ compile
+→ error
+Reviewer Checklist
+Comment 1: addressed?
+Comment 2: addressed?
+
+这样就更像 Agent，而不是“多次 Prompt”。
+
+三个 Demo 放在你的 Workshop 里的最佳组合
+
+我认为其实不用三选一。
+
+最好的设计是：
+
+主线：PPT Agent
+
+贯穿前半场：
+
+API
+↓
+Structured Output
+↓
+Tool Calling
+↓
+Workflow
+↓
+Agent Loop
+
+它负责建立：
+
+Agent 是怎么从普通 LLM 应用演化出来的？
+
+第二 Demo：Coding Agent
+
+放在：
+
+Reflection / Feedback
+
+只讲一个极简 Bug Fix。
+
+负责解释：
+
+Agent 为什么可以通过环境反馈不断修正？
+
+第三 Demo：Paper Revision Agent
+
+放在：
+
+Planning + Memory
+
+或者最后“科研 Agent”拓展。
+
+负责解释：
+
+Agent 如何处理真正的 PhD 工作？
+
+这样你的 Workshop 会形成一个非常好的层次。
+
+我会把三个 Demo 的角色定义成
+Demo 1：PPT Agent
+
+“理解 Agent 是怎么搭起来的。”
+
+重点：
+
+Tool
+Workflow
+Agent Loop
+State
+Demo 2：Code Agent
+
+“理解 Agent 为什么需要 Feedback。”
+
+重点：
+
+Environment
+Execution
+Error
+Reflection
+Retry
+Demo 3：Paper Agent
+
+“理解 Agent 怎样用于科研。”
+
+重点：
+
+Planning
+Retrieval
+Memory
+Verification
+Long-horizon Task
+
+这样比单独用一个 Research Agent 从头讲到尾要丰富，而且不会显得割裂。
+
+如果只能选择一个
+
+我的排序是：
+
+1. PPT 制作 Agent
+
+最适合作为商科 Workshop 的主 Demo。
+
+2. 论文修改 Agent
+
+最适合 PhD 场景，也最容易让听众联想到自己的工作。
+
+3. Coding Agent
+
+Agent 机制最漂亮，但受众适配性最弱。
+
+所以我会建议你的最终 Workshop 结构是：
+
+PPT Agent 做主线 + 极简 Code Agent 演示 Reflection + Paper Revision Agent 做科研落地案例。
+
+这个组合实际上和你现在的讲义比单纯的“商业调研 Agent”更契合。
+
+ChatGPT 也可能会犯错。请核查重要信息。
+
+思考
