@@ -11,14 +11,29 @@
 
 执行时不需要命令行参数。所有非敏感运行输入都位于 `config.yaml`；URL 与 Key 集中在 `core/.env`。真实 `.env` 已被 `.gitignore` 忽略，仓库只保留无真实凭据的 `.env.example`。
 
-两种模型连接均走 OpenAI-compatible Chat Completions：
+## 模型调用记录
+
+每次运行都会创建统一的 `model_calls.jsonl`。每轮调用先写 `phase=request`；成功后追加 `phase=response`，失败则追加 `phase=error`，同一轮通过 `call_id` 关联。
+
+```text
+runs/<run_id>/
+  model_calls.jsonl
+  model_calls/
+    model_call_001_request.json   # 最终 API payload，包含 input/instructions/tools
+    model_call_001_output.txt     # 未执行 strip 的原始 response.output_text
+    model_call_001_response.json  # 完整 SDK 响应；由 recording.save_messages 控制
+```
+
+S0 的 `draft.md` 直接使用同一份原始 `output_text`；`model_call_001_output.txt` 是独立留存副本。API Key 不会进入上述记录。
+
+两种模型连接均走 OpenAI-compatible Responses API，并默认流式接收响应：
 
 | `active_profile` | `.env` 中读取 | 用途 |
 | --- | --- | --- |
-| `deepseek` | `DEEPSEEK_BASE_URL`、`DEEPSEEK_API_KEY` | DeepSeek 官方 API 或对应代理 |
-| `third_party` | `THIRD_PARTY_BASE_URL`、`THIRD_PARTY_API_KEY` | 任意兼容 Chat Completions 的第三方 API |
+| `deepseek` | `DEEPSEEK_BASE_URL`、`DEEPSEEK_API_KEY` | 支持 Responses 的 DeepSeek 服务或对应代理 |
+| `third_party` | `THIRD_PARTY_BASE_URL`、`THIRD_PARTY_API_KEY` | 支持 Responses 的第三方 API |
 
-第三方服务若不接受 `response_format`，将对应 profile 的 `supports_json_object` 设为 `false`；若不支持 Tool Calling，则只能运行 S0–S1。
+可运行 `python src/tests/check_api_connections.py` 对两个 profile 分别发起最小真实请求。该脚本不会打印 API Key，也不会被普通单元测试自动调用。
 
 ## Stage 对照
 

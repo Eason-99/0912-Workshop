@@ -87,7 +87,7 @@ config.task → LLM → draft.md
 
 该阶段故意暴露单次生成的限制：可能没有真实检索、来源陈旧或统计口径混杂。它不生成 PPT。
 
-验收：请求、响应和 `draft.md` 均被保存，日志中没有工具事件。
+验收：最终请求、原始响应和 `draft.md` 均被保存；`draft.md` 与原始 `output_text` 一致，日志中没有工具事件。
 
 ### S1：Structured Output
 
@@ -270,6 +270,8 @@ src/
     <run_id>/
       config.snapshot.yaml
       events.jsonl
+      model_calls.jsonl          # 全部模型轮次的 request/response/error 索引
+      model_calls/               # 每轮最终请求、原始文本和完整 SDK 响应
       result.json
       sources.json
       evidence.json
@@ -321,17 +323,19 @@ model:
       name: deepseek-chat
       api_key_env: DEEPSEEK_API_KEY
       base_url_env: DEEPSEEK_BASE_URL
-      supports_json_object: true
+      api_mode: responses
       supports_tool_calling: true
     third_party:
-      name: your-model-name
+      name: gpt-5.6-sol
       api_key_env: THIRD_PARTY_API_KEY
       base_url_env: THIRD_PARTY_BASE_URL
-      supports_json_object: true
+      api_mode: responses
       supports_tool_calling: true
   temperature: null
   max_output_tokens: 8000
-  timeout_seconds: 120
+  timeout_seconds: 300
+  max_retries: 3
+  use_streaming: true
 
 task:
   language: zh-CN
@@ -459,7 +463,7 @@ flowchart TD
 | M5 | S5 | 状态可落盘，每个关键字段可追溯到执行事件 |
 | M6 | S6 | 计划可落盘，至少发生一次有依据的 Re-plan |
 | M7 | 渲染、检查、Patch、S7 | 保存修改前后 PPT 和两次检查结果 |
-| M8 | 素材整理 | 从 `events.jsonl` 提取截图和录屏所需时间线 |
+| M8 | 素材整理 | 从 `events.jsonl` 与 `model_calls.jsonl` 提取截图和录屏所需时间线 |
 
 首个课堂可用里程碑是 M4；完整主 Demo 是 M7。M1–M7 完成前不增加扩展模块。
 

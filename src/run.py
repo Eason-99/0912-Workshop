@@ -18,7 +18,7 @@ from typing import Any, Callable
 from core.config import AppConfig, load_config, validate_stage_environment
 # 创建一次运行期间共享的来源、产物、State 和 Plan 容器。
 from core.context import ExecutionContext
-# 创建所有 Stage 共用的 OpenAI-compatible Chat Completions 适配器。
+# 创建所有 Stage 共用的 OpenAI-compatible Responses API 适配器。
 from core.model import OpenAIModel
 # 创建隔离运行目录，并记录事件和最终产物。
 from core.recorder import Recorder, create_run_id

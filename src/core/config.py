@@ -77,10 +77,16 @@ class AppConfig:
         profiles = model["profiles"]
         return profile_name, profiles[profile_name]
 
-    def model_connection(self) -> tuple[str, str]:
-        """从已加载的 `.env` 读取当前模型的 API Key 与 Base URL。首次使用：S0。"""
+    def model_connection(self, profile_name: str | None = None) -> tuple[str, str]:
+        """从 `.env` 读取指定或当前模型的 API Key 与 Base URL。首次使用：S0。"""
 
-        profile_name, profile = self.active_model_profile()
+        if profile_name is None:
+            profile_name, profile = self.active_model_profile()
+        else:
+            profiles = self.section("model")["profiles"]
+            if profile_name not in profiles:
+                raise ConfigError(f"模型 profile 不存在：{profile_name}")
+            profile = profiles[profile_name]
         api_key_name = str(profile["api_key_env"])
         base_url_name = str(profile["base_url_env"])
         api_key = os.getenv(api_key_name, "").strip()
@@ -165,9 +171,15 @@ def _validate_config(data: dict[str, Any], src_dir: Path) -> None:
         for field in ("name", "api_key_env", "base_url_env"):
             if not str(profile.get(field, "")).strip():
                 raise ConfigError(f"`model.profiles.{profile_name}.{field}` 不能为空")
-        for field in ("supports_json_object", "supports_tool_calling"):
-            if not isinstance(profile.get(field), bool):
-                raise ConfigError(f"`model.profiles.{profile_name}.{field}` 必须是 boolean")
+        if profile.get("api_mode") != "responses":
+            raise ConfigError(f"`model.profiles.{profile_name}.api_mode` 当前必须是 responses")
+        if not isinstance(profile.get("supports_tool_calling"), bool):
+            raise ConfigError(
+                f"`model.profiles.{profile_name}.supports_tool_calling` 必须是 boolean"
+            )
+    _require_positive(model, "max_retries", "model")
+    if not isinstance(model.get("use_streaming"), bool):
+        raise ConfigError("`model.use_streaming` 必须是 boolean")
 
     research = _require_mapping(data, "research")
     if research.get("search_provider") != "tavily":

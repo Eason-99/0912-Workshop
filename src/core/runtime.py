@@ -34,15 +34,14 @@ class ToolDefinition:
     handler: Callable[[dict[str, Any], "ExecutionContext"], dict[str, Any]]
 
     def openai_schema(self) -> dict[str, Any]:
-        """将本地工具定义转换为 Chat Completions 工具 Schema。首次使用：S2。"""
+        """将本地工具定义转换为 Responses API 工具 Schema。首次使用：S2。"""
 
         return {
             "type": "function",
-            "function": {
-                "name": self.name,
-                "description": self.description,
-                "parameters": self.parameters,
-            },
+            "name": self.name,
+            "description": self.description,
+            "parameters": self.parameters,
+            "strict": True,
         }
 
 
@@ -339,12 +338,12 @@ def execute_call(
 
 
 def tool_output_item(result: ToolResult) -> dict[str, Any]:
-    """把工具结果格式化为 Chat Completions 的 tool 消息。首次使用：S2。"""
+    """把工具结果格式化为 Responses API 的函数输出项。首次使用：S2。"""
 
     return {
-        "role": "tool",
-        "tool_call_id": result.call_id,
-        "content": json.dumps(result.to_dict(), ensure_ascii=False),
+        "type": "function_call_output",
+        "call_id": result.call_id,
+        "output": json.dumps(result.to_dict(), ensure_ascii=False),
     }
 
 

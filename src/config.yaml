@@ -3,32 +3,34 @@
 
 # 运行入口与产物目录设置；首次使用：S0。
 run:
-  stage: s0_api  # 本次执行的阶段，可选 s0_api、s1_structured、s2_tools、s3_workflow、s4_agent、s5_state、s6_planning、s7_reflection。
+  stage: s1_structured  # 本次执行的阶段，可选 s0_api、s1_structured、s2_tools、s3_workflow、s4_agent、s5_state、s6_planning、s7_reflection。
   output_dir: runs  # 运行产物根目录；相对于 src 解析，且不允许指向 src 外部。
   run_name: china_ai_landscape  # 运行名称；会与 UTC 时间组合成唯一 run_id，避免覆盖历史结果。
 
 # OpenAI-compatible 模型调用设置；首次使用：S0。
 model:
-  # active_profile: deepseek  # 当前启用的连接配置；切换为 third_party 即可改用第三方 API。
-  active_profile: third_party  # 当前启用的连接配置；切换为 third_party 即可改用第三方 API。
+  active_profile: deepseek  # 当前启用的连接配置；切换为 third_party 即可改用第三方 API。
+  # active_profile: third_party  # 当前启用的连接配置；切换为 third_party 即可改用第三方 API。
   env_file: core/.env  # API Key、Base URL 和搜索密钥所在文件；相对于 src，且已被 Git 忽略。
-  # 两种连接均使用 OpenAI-compatible Chat Completions；这里只保存模型名和环境变量名。
+  # 两种连接均默认使用 OpenAI-compatible Responses API；这里只保存模型名和环境变量名。
   profiles:
     deepseek:  # DeepSeek 官方服务或使用同一凭据命名的兼容代理。
-      name: deepseek-chat  # 传给 DeepSeek API 的模型名称；推理模型可按需改为 deepseek-reasoner。
+      name: deepseek-v4-flash  # 传给 DeepSeek API 的模型名称；推理模型可按需改为 deepseek-reasoner。
       api_key_env: DEEPSEEK_API_KEY  # 从 core/.env 读取此变量作为当前 API Key。
       base_url_env: DEEPSEEK_BASE_URL  # 从 core/.env 读取此变量作为当前 Base URL。
-      supports_json_object: true  # 端点是否支持 response_format=json_object；不支持时改为 false，仅用 Prompt 约束 JSON。
-      supports_tool_calling: true  # 端点是否支持 Chat Completions 函数工具调用；S2–S7 必须为 true。
+      api_mode: responses  # 使用 /responses 端点；当前两个 profile 都固定为该协议。
+      supports_tool_calling: true  # 端点是否支持 Responses API 函数工具调用；S2–S7 必须为 true。
     third_party:  # 任意 OpenAI-compatible 第三方服务。
-      name: your-model-name  # 第三方服务实际提供的模型名称，启用本 profile 前必须修改。
+      name: gpt-5.6-sol  # 第三方服务实际提供的模型名称，与本机 Codex 当前模型保持一致。
       api_key_env: THIRD_PARTY_API_KEY  # 从 core/.env 读取此变量作为第三方 API Key。
       base_url_env: THIRD_PARTY_BASE_URL  # 从 core/.env 读取此变量作为第三方 Base URL。
-      supports_json_object: true  # 第三方若不接受 response_format 参数，请改为 false。
+      api_mode: responses  # 使用 /responses 端点；当前两个 profile 都固定为该协议。
       supports_tool_calling: true  # 第三方若不支持函数工具调用，只有 S0–S1 可以运行。
   temperature: null  # 可选采样温度；null 表示不向 API 发送该参数，使用模型默认行为。
-  max_output_tokens: 8000  # 单次 Chat Completions 响应允许生成的最大 Token 数；适用于 S0–S7。
-  timeout_seconds: 120  # 单次模型 API 请求超时秒数；适用于 S0–S7。
+  max_output_tokens: 8000  # 单次 Responses API 响应允许生成的最大 Token 数；适用于 S0–S7。
+  timeout_seconds: 300  # 单次模型 API 读取超时秒数；复杂五页任务可能明显慢于连通性测试。
+  max_retries: 3  # 遇到临时连接错误、超时或限流时，SDK 自动重试的最大次数。
+  use_streaming: true  # 是否流式接收 Responses 事件；可避免代理长时间无响应体导致空闲连接中断。
 
 # 统一业务任务和研究口径；首次使用：S0。
 task:
@@ -84,6 +86,6 @@ review:
 
 # 调试、复现和录屏所需的日志设置；首次使用：S0。
 recording:
-  save_messages: true  # 是否在 events.jsonl 中保存完整模型请求和响应；false 时只保存摘要。
+  save_messages: true  # 是否额外保存完整 SDK 响应 JSON；最终请求、原始 output_text 和 model_calls.jsonl 始终保存。
   save_tool_payloads: true  # 是否保存完整工具参数和返回数据；false 时只保存名称、状态和错误。
   save_config_snapshot: true  # 是否把本次 config.yaml 复制为运行目录中的 config.snapshot.yaml。
