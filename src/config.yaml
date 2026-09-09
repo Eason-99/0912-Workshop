@@ -1,0 +1,89 @@
+# Demo 唯一配置文件，首次使用：S0，后续所有阶段复用。
+# 除 URL/密钥等连接信息外，所有会改变运行行为的输入参数都集中在这里。
+
+# 运行入口与产物目录设置；首次使用：S0。
+run:
+  stage: s0_api  # 本次执行的阶段，可选 s0_api、s1_structured、s2_tools、s3_workflow、s4_agent、s5_state、s6_planning、s7_reflection。
+  output_dir: runs  # 运行产物根目录；相对于 src 解析，且不允许指向 src 外部。
+  run_name: china_ai_landscape  # 运行名称；会与 UTC 时间组合成唯一 run_id，避免覆盖历史结果。
+
+# OpenAI-compatible 模型调用设置；首次使用：S0。
+model:
+  # active_profile: deepseek  # 当前启用的连接配置；切换为 third_party 即可改用第三方 API。
+  active_profile: third_party  # 当前启用的连接配置；切换为 third_party 即可改用第三方 API。
+  env_file: core/.env  # API Key、Base URL 和搜索密钥所在文件；相对于 src，且已被 Git 忽略。
+  # 两种连接均使用 OpenAI-compatible Chat Completions；这里只保存模型名和环境变量名。
+  profiles:
+    deepseek:  # DeepSeek 官方服务或使用同一凭据命名的兼容代理。
+      name: deepseek-chat  # 传给 DeepSeek API 的模型名称；推理模型可按需改为 deepseek-reasoner。
+      api_key_env: DEEPSEEK_API_KEY  # 从 core/.env 读取此变量作为当前 API Key。
+      base_url_env: DEEPSEEK_BASE_URL  # 从 core/.env 读取此变量作为当前 Base URL。
+      supports_json_object: true  # 端点是否支持 response_format=json_object；不支持时改为 false，仅用 Prompt 约束 JSON。
+      supports_tool_calling: true  # 端点是否支持 Chat Completions 函数工具调用；S2–S7 必须为 true。
+    third_party:  # 任意 OpenAI-compatible 第三方服务。
+      name: your-model-name  # 第三方服务实际提供的模型名称，启用本 profile 前必须修改。
+      api_key_env: THIRD_PARTY_API_KEY  # 从 core/.env 读取此变量作为第三方 API Key。
+      base_url_env: THIRD_PARTY_BASE_URL  # 从 core/.env 读取此变量作为第三方 Base URL。
+      supports_json_object: true  # 第三方若不接受 response_format 参数，请改为 false。
+      supports_tool_calling: true  # 第三方若不支持函数工具调用，只有 S0–S1 可以运行。
+  temperature: null  # 可选采样温度；null 表示不向 API 发送该参数，使用模型默认行为。
+  max_output_tokens: 8000  # 单次 Chat Completions 响应允许生成的最大 Token 数；适用于 S0–S7。
+  timeout_seconds: 120  # 单次模型 API 请求超时秒数；适用于 S0–S7。
+
+# 统一业务任务和研究口径；首次使用：S0。
+task:
+  language: zh-CN  # 预期输出语言代码，用于生成中文任务指令。
+  audience: 商科研究生  # PPT 的目标听众，会写入所有 Stage 共用的任务 Prompt。
+  data_cutoff_date: 2026-09-09  # 数据截止日期，格式必须为 YYYY-MM-DD。
+  lookback_months: 12  # 趋势分析向前回溯的月数。
+  slide_count: 5  # DeckSpec 和最终 PPT 的固定页数，必须与 slide_outline 数量一致。
+  market: 中国大陆消费端通用 AI 助手  # 本次研究的市场主题。
+  product_count_min: 5  # S3–S7 纳入比较的最少产品数量。
+  product_count_max: 6  # S3–S7 纳入比较的最多产品数量，也是 Agent 选择产品的上限。
+  primary_metric: MAU  # 用户规模比较时优先使用的核心指标。
+  require_same_scope_for_chart: true  # 是否要求同一图表使用相同指标、地区、终端和单位；S3 起进入可比性报告和 Prompt。
+  allow_missing_data: true  # 是否允许保留无法补齐的数据缺口；true 表示明确披露缺口而不补造。
+  # 五页固定大纲；列表顺序同时决定页面 ID s1–s5 的语义。
+  slide_outline:
+    - 范围、口径与核心结论  # s1：标题、研究范围、统计口径和核心结论。
+    - 最新竞争格局  # s2：最新同口径 MAU 和样本内 MAU 份额。
+    - 最近 12 个月变化  # s3：至少三个可比时间点及数据缺口。
+    - 产品定位与优劣势  # s4：5–6 款产品的定位、优势和局限。
+    - 趋势、商业启示与局限  # s5：市场趋势、商业含义和研究限制。
+
+# 联网搜索与网页正文读取设置；搜索首次使用：S2，读页首次使用：S3。
+research:
+  search_provider: tavily  # 搜索服务商；当前代码只支持 tavily。
+  search_api_key_env: TAVILY_API_KEY  # 从同一个 core/.env 读取 Tavily 密钥；S2–S7 启动时检查。
+  max_results_per_query: 5  # 每次 search_web 最多保留的候选结果数量。
+  max_page_chars: 12000  # read_page 返回给模型的单页正文最大字符数，避免上下文过长。
+  preferred_domains: []  # 可选优先搜索域名列表，例如 ["questmobile.com.cn"]；空列表表示不限制。
+  blocked_domains: []  # 禁止搜索和读取的域名列表；子域名也会被拦截。
+
+# PPT 构建和渲染设置；构建首次使用：S2，渲染首次使用：S7。
+presentation:
+  template: null  # 可选空白 PPTX 模板路径，相对于 src；null 表示使用 python-pptx 默认空白演示文稿。
+  output_filename: china_ai_landscape.pptx  # 每次运行内指向最新版 PPT 的稳定文件名，只能填写文件名。
+  font_family: Noto Sans CJK SC  # PPT 标题、正文、来源和页码使用的中文字体。
+  render_dpi: 144  # S7 将 PDF 转为逐页 PNG 时采用的 DPI。
+
+# 模型、工具、循环和时间预算；不同限制从相应 Stage 开始生效。
+limits:
+  max_model_calls: 20  # 一次运行最多允许的模型请求数；首次使用：S0。
+  max_tool_calls: 30  # 一次运行最多允许的工具调用数；首次使用：S2。
+  max_agent_steps: 15  # Agent Loop 最多决策轮数；首次使用：S4。
+  max_review_rounds: 2  # 检查后最多允许的 Deck 修订轮数；首次使用：S7。
+  max_elapsed_seconds: 900  # Agent Loop 最大运行秒数；首次使用：S4。
+
+# 确定性 Deck/PPT 检查规则；首次使用：S7。
+review:
+  max_bullets_per_slide: 6  # 单页允许的最大 bullet 数，超过时生成 warning。
+  max_chars_per_slide: 260  # 单页全部 bullet 的最大总字符数，超过时生成 warning。
+  require_source_for_numeric_claim: true  # 是否把没有 source_id 的数字论断标记为 error。
+  require_metric_scope_label: true  # 是否要求份额内容明确写成“样本内 MAU 份额”。
+
+# 调试、复现和录屏所需的日志设置；首次使用：S0。
+recording:
+  save_messages: true  # 是否在 events.jsonl 中保存完整模型请求和响应；false 时只保存摘要。
+  save_tool_payloads: true  # 是否保存完整工具参数和返回数据；false 时只保存名称、状态和错误。
+  save_config_snapshot: true  # 是否把本次 config.yaml 复制为运行目录中的 config.snapshot.yaml。
