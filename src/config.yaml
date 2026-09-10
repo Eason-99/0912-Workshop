@@ -3,7 +3,7 @@
 
 # 运行入口与产物目录设置；首次使用：S0。
 run:
-  stage: s1_structured  # 本次执行的阶段，可选 s0_api、s1_structured、s2_tools、s3_workflow、s4_agent、s5_state、s6_planning、s7_reflection。
+  stage: s5_state  # 本次执行的阶段，可选 s0_api、s1_structured、s2_tools、s3_workflow、s4_agent、s5_state、s6_planning、s7_reflection。
   output_dir: runs  # 运行产物根目录；相对于 src 解析，且不允许指向 src 外部。
   run_name: china_ai_landscape  # 运行名称；会与 UTC 时间组合成唯一 run_id，避免覆盖历史结果。
 
@@ -20,14 +20,16 @@ model:
       base_url_env: DEEPSEEK_BASE_URL  # 从 core/.env 读取此变量作为当前 Base URL。
       api_mode: responses  # 使用 /responses 端点；当前两个 profile 都固定为该协议。
       supports_tool_calling: true  # 端点是否支持 Responses API 函数工具调用；S2–S7 必须为 true。
+      replay_previous_output: true  # DeepSeek 不按 previous_response_id 复原工具调用链，需回放上一轮输出项（含 reasoning）。
     third_party:  # 任意 OpenAI-compatible 第三方服务。
       name: gpt-5.6-sol  # 第三方服务实际提供的模型名称，与本机 Codex 当前模型保持一致。
       api_key_env: THIRD_PARTY_API_KEY  # 从 core/.env 读取此变量作为第三方 API Key。
       base_url_env: THIRD_PARTY_BASE_URL  # 从 core/.env 读取此变量作为第三方 Base URL。
       api_mode: responses  # 使用 /responses 端点；当前两个 profile 都固定为该协议。
       supports_tool_calling: true  # 第三方若不支持函数工具调用，只有 S0–S1 可以运行。
+      replay_previous_output: false  # 标准 OpenAI-compatible 端点由服务端按 previous_response_id 维护工具链，无需回放。
   temperature: null  # 可选采样温度；null 表示不向 API 发送该参数，使用模型默认行为。
-  max_output_tokens: 8000  # 单次 Responses API 响应允许生成的最大 Token 数；适用于 S0–S7。
+  max_output_tokens: 32000  # 单次 Responses API 响应允许生成的最大 Token 数；适用于 S0–S7。推理模型的思考 Token 也计入上限，S3 抽取 Evidence 时实测需要约 17K，过小会被截断。
   timeout_seconds: 300  # 单次模型 API 读取超时秒数；复杂五页任务可能明显慢于连通性测试。
   max_retries: 3  # 遇到临时连接错误、超时或限流时，SDK 自动重试的最大次数。
   use_streaming: true  # 是否流式接收 Responses 事件；可避免代理长时间无响应体导致空闲连接中断。
@@ -70,10 +72,12 @@ presentation:
   render_dpi: 144  # S7 将 PDF 转为逐页 PNG 时采用的 DPI。
 
 # 模型、工具、循环和时间预算；不同限制从相应 Stage 开始生效。
+# 推理模型的思考 Token 会显著推高单步成本，而 Agent 每轮常并行发起多个工具调用，
+# 实测 S4 在 30 次额度内无法完成「调研 + 交付」，因此默认额度按“能交付”设定，仍保留上限。
 limits:
-  max_model_calls: 20  # 一次运行最多允许的模型请求数；首次使用：S0。
-  max_tool_calls: 30  # 一次运行最多允许的工具调用数；首次使用：S2。
-  max_agent_steps: 15  # Agent Loop 最多决策轮数；首次使用：S4。
+  max_model_calls: 40  # 一次运行最多允许的模型请求数；首次使用：S0。
+  max_tool_calls: 60  # 一次运行最多允许的工具调用数；首次使用：S2。
+  max_agent_steps: 25  # Agent Loop 最多决策轮数；首次使用：S4。
   max_review_rounds: 2  # 检查后最多允许的 Deck 修订轮数；首次使用：S7。
   max_elapsed_seconds: 900  # Agent Loop 最大运行秒数；首次使用：S4。
 

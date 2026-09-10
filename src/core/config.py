@@ -177,6 +177,10 @@ def _validate_config(data: dict[str, Any], src_dir: Path) -> None:
             raise ConfigError(
                 f"`model.profiles.{profile_name}.supports_tool_calling` 必须是 boolean"
             )
+        if not isinstance(profile.get("replay_previous_output", False), bool):
+            raise ConfigError(
+                f"`model.profiles.{profile_name}.replay_previous_output` 必须是 boolean"
+            )
     _require_positive(model, "max_retries", "model")
     if not isinstance(model.get("use_streaming"), bool):
         raise ConfigError("`model.use_streaming` 必须是 boolean")

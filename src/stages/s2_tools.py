@@ -3,7 +3,7 @@
 from core.config import AppConfig
 from core.context import ExecutionContext
 from core.model import OpenAIModel
-from core.prompts import task_prompt, tool_demo_instructions
+from core.prompts import bounded_ppt_prompt, tool_demo_instructions
 from core.runtime import ToolRegistry, run_tool_round
 
 
@@ -23,14 +23,16 @@ def run(
         f"搜索截至 {cutoff} 的中国大陆 AI 助手 App MAU 排名候选来源。",
         tool_demo_instructions(),
         ["search_web"],
+        close_tools=True,
     )
     ppt_summary = run_tool_round(
         model,
         registry,
         context,
-        task_prompt(config) + "\n本阶段只演示把结构化内容交给 create_ppt；不要声称完成了充分调研。",
+        bounded_ppt_prompt(config),
         tool_demo_instructions(),
         ["create_ppt"],
+        close_tools=True,
     )
     context.recorder.write_text(
         "tool_round_summaries.md",

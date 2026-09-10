@@ -63,6 +63,11 @@ class OpenAIModel:
         self.model_name = str(profile["name"])
         self.model_config = model_config
         self.call_count = 0
+        # 部分兼容服务（如 DeepSeek）不依据 previous_response_id 复原工具调用链，
+        # 必须在下一轮请求中回放上一轮输出项，否则报“找不到 call_id 对应的工具调用”。
+        self.replay_previous_output = bool(profile.get("replay_previous_output", False))
+        # 按 response id 暂存上一轮原始输出项，供下一轮工具结果请求回放。
+        self._pending_output_items: dict[str, list[dict[str, Any]]] = {}
 
     def generate_text(self, prompt: str, instructions: str) -> str:
         """执行一次普通 Responses 文本生成。首次使用：S0。"""
@@ -121,14 +126,23 @@ class OpenAIModel:
         function_outputs: list[dict[str, Any]],
         instructions: str,
         tools: list[dict[str, Any]],
+        tool_choice: str | None = None,
     ) -> ModelTurn:
-        """使用 response ID 与 call ID 把工具观察送回模型。首次使用：S2。"""
+        """使用 response ID 与 call ID 把工具观察送回模型。首次使用：S2。
 
+        `tool_choice` 为 `"none"` 时，本轮禁止再次发起工具调用，用于让固定教学回合
+        在回传观察后必须给出文本总结。
+        """
+
+        # 需要回放的 provider 先补上上一轮的 reasoning/function_call 项，再放工具输出。
+        replayed = self._pending_output_items.pop(previous_turn_id, [])
+        choice = {} if tool_choice is None else {"tool_choice": tool_choice}
         return self._create(
             previous_response_id=previous_turn_id,
-            input=function_outputs,
+            input=replayed + function_outputs,
             instructions=instructions,
             tools=tools,
+            **choice,
         )
 
     def extract_tool_calls(self, response: ModelTurn) -> list[ToolCall]:
@@ -162,8 +176,7 @@ class OpenAIModel:
         )
         try:
             if self.model_config.get("use_streaming", True):
-                with self.client.responses.stream(**request) as stream:
-                    response = stream.get_final_response()
+                response = self._stream_response(**request)
             else:
                 response = self.client.responses.create(**request)
         except Exception as exc:
@@ -191,12 +204,58 @@ class OpenAIModel:
         )
         if status == "incomplete":
             details = getattr(response, "incomplete_details", None)
-            raise ModelError(f"模型输出不完整：{details}")
+            raise ModelError(
+                f"模型输出被截断，未生成完整结果（incomplete_details={details}）。"
+                "可提高 model.max_output_tokens，或减少单次请求需要生成的内容。"
+            )
+        output_items = getattr(response, "output", [])
+        # 只有包含函数调用的响应才需要留存回放，避免无用地累积上下文。
+        if self.replay_previous_output and any(
+            getattr(item, "type", None) == "function_call" for item in output_items
+        ):
+            self._pending_output_items[response_id] = self._dump_output_items(output_items)
         return ModelTurn(
             id=response_id,
             output_text=raw_output_text,
-            tool_calls=self._parse_tool_calls(getattr(response, "output", [])),
+            tool_calls=self._parse_tool_calls(output_items),
         )
+
+    def _stream_response(self, **request: Any) -> Any:
+        """消费 Responses 事件流，并返回终止事件携带的完整响应。首次使用：S0。
+
+        OpenAI SDK 的 `get_final_response()` 只承认 `response.completed`；当服务端以
+        `response.incomplete`（例如达到 `max_output_tokens`）或 `response.failed` 结束时，
+        它会抛出 “Didn't receive a `response.completed` event.” 并丢掉真实原因。
+        这里显式读取终止事件，把真实响应交回上层，从而报出截断或失败的具体原因。
+        """
+
+        terminal: Any = None
+        with self.client.responses.stream(**request) as stream:
+            for event in stream:
+                if getattr(event, "type", None) in (
+                    "response.completed",
+                    "response.incomplete",
+                    "response.failed",
+                ):
+                    terminal = event
+                    break
+        if terminal is None:
+            raise ModelError("流式响应在返回终止事件前结束，未收到 completed/incomplete/failed")
+        response = getattr(terminal, "response", None)
+        if response is None:
+            raise ModelError(f"终止事件 `{getattr(terminal, 'type', 'unknown')}` 未携带完整响应")
+        return response
+
+    def _dump_output_items(self, output: list[Any]) -> list[dict[str, Any]]:
+        """把上一轮输出项转为可原样回放的 JSON 字典。首次使用：S2。"""
+
+        items: list[dict[str, Any]] = []
+        for item in output:
+            if hasattr(item, "model_dump"):
+                items.append(item.model_dump(mode="json"))
+            elif isinstance(item, dict):
+                items.append(item)
+        return items
 
     def _parse_tool_calls(self, output: list[Any]) -> list[ToolCall]:
         """把 Responses 函数调用项转换为共享 `ToolCall`。首次使用：S2。"""

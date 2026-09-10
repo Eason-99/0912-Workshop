@@ -402,6 +402,8 @@ S4、S5、S6，以及 S7 的“初版生成 Agent Loop”内部使用：
 
 因此模型不是只看到 State。通过 `previous_response_id`，服务端会话链还关联此前的模型输出、ToolCall 和 ToolResult；同时代码每轮重新传递最新 instructions 和工具 Schema。
 
+需要注意不同服务商对这条链路的要求并不一致。DeepSeek 不会依据 `previous_response_id` 复原工具调用链：它要求下一轮请求把上一轮的 `reasoning` 与 `function_call` 输出项原样回放，否则会直接返回 400 `No tool call found for tool output with call_id ...`，即使该 `call_id` 确实来自上一条响应。因此 `profiles.*.replay_previous_output` 控制 `continue_tool_turn()` 是否在工具结果前补回上一轮输出项：DeepSeek 需要开启，标准 OpenAI-compatible 端点保持关闭。
+
 S4 虽然没有 State，仍能依赖这条会话链理解前面的搜索和读页结果。S5/S6 则是在同一机制之外，再显式加入 State/Plan。
 
 ### 8.2 独立任务之间：不会自动继承
@@ -424,7 +426,7 @@ S4 虽然没有 State，仍能依赖这条会话链理解前面的搜索和读�
 1. 通过 `previous_response_id` 连接的服务端会话内容；
 2. Python 显式放入新的 `prompt`、`instructions` 或 `function_call_output` 的内容。
 
-当前代码没有“当 `previous_response_id` 不可用时，把本地完整历史重新拼回请求”的降级实现。因此第三方 Responses API 还需要真正兼容并保存 response ID 链路；仅仅接受单次 Responses 请求还不够。
+当前代码没有“把整段本地完整历史重新拼回请求”的通用降级实现，只针对工具调用链提供了 `replay_previous_output`：开启后会在回传 `function_call_output` 前补上上一轮的原始输出项。因此第三方 Responses API 仍需真正兼容并保存 response ID 链路；仅仅接受单次 Responses 请求还不够。
 
 ## 9. 各阶段主要落盘文件
 

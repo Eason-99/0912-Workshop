@@ -8,17 +8,17 @@ import unittest
 
 from core.config import load_config
 from core.context import ExecutionContext
-from core.model import OpenAIModel
+from core.model import ModelError, OpenAIModel
 from core.recorder import Recorder
 from core.runtime import tool_output_item
 from stages.s0_api import run as run_s0
 
 
 class FakeResponseStream:
-    """模拟 Responses 流对象并提供最终聚合响应。首次覆盖：S1。"""
+    """模拟 Responses 事件流，按响应状态产出终止事件。首次覆盖：S1。"""
 
     def __init__(self, response: object) -> None:
-        """保存进入上下文后要返回的最终响应。首次覆盖：S1。"""
+        """保存进入上下文后要作为终止事件负载返回的响应。首次覆盖：S1。"""
 
         self.response = response
 
@@ -32,10 +32,15 @@ class FakeResponseStream:
 
         return None
 
-    def get_final_response(self) -> object:
-        """返回预置的完整 Responses 响应。首次覆盖：S1。"""
+    def __iter__(self):
+        """产出 completed 或 incomplete 终止事件；后者用于验证截断处理。首次覆盖：S1。"""
 
-        return self.response
+        event_type = (
+            "response.incomplete"
+            if getattr(self.response, "status", None) == "incomplete"
+            else "response.completed"
+        )
+        yield SimpleNamespace(type=event_type, response=self.response)
 
 
 class FakeResponses:
@@ -66,16 +71,41 @@ def fake_response(response_id: str, text: str, output: list[object] | None = Non
     return SimpleNamespace(id=response_id, output_text=text, output=output or [], status="completed")
 
 
+def fake_incomplete_response(response_id: str, text: str, reason: str = "max_output_tokens") -> object:
+    """构造被 max_output_tokens 截断的响应。首次覆盖：S3。"""
+
+    return SimpleNamespace(
+        id=response_id,
+        output_text=text,
+        output=[],
+        status="incomplete",
+        incomplete_details=SimpleNamespace(reason=reason),
+    )
+
+
 def fake_tool_call(call_id: str, name: str, arguments: str) -> object:
     """构造带 JSON 参数的最小 Responses 函数调用项。首次覆盖：S2。"""
 
     return SimpleNamespace(type="function_call", call_id=call_id, name=name, arguments=arguments)
 
 
+def fake_output_item(payload: dict[str, object]) -> object:
+    """构造可回放的原始输出项，模拟 SDK 的 model_dump。首次覆盖：S2。"""
+
+    item = SimpleNamespace(**payload)
+    item.model_dump = lambda mode="python": dict(payload)
+    return item
+
+
 class ModelTests(unittest.TestCase):
     """在不联网的情况下验证两个 profile 共用的 Responses 行为。首次覆盖：S1。"""
 
-    def _model(self, responses: list[object], run_dir: Path) -> tuple[OpenAIModel, FakeResponses]:
+    def _model(
+        self,
+        responses: list[object],
+        run_dir: Path,
+        replay_previous_output: bool = False,
+    ) -> tuple[OpenAIModel, FakeResponses]:
         """绕过真实客户端初始化并注入可观察的假 Responses 客户端。首次覆盖：S1。"""
 
         config = load_config(Path(__file__).resolve().parents[1] / "config.yaml")
@@ -86,10 +116,17 @@ class ModelTests(unittest.TestCase):
         model.config = config
         model.recorder = recorder
         model.profile_name = "third_party"
-        model.profile = {"name": "test-model", "api_mode": "responses", "supports_tool_calling": True}
+        model.profile = {
+            "name": "test-model",
+            "api_mode": "responses",
+            "supports_tool_calling": True,
+            "replay_previous_output": replay_previous_output,
+        }
         model.model_name = "test-model"
         model.model_config = config.section("model")
         model.call_count = 0
+        model.replay_previous_output = replay_previous_output
+        model._pending_output_items = {}
         return model, fake_api
 
     def test_call_log_preserves_final_request_and_raw_output(self) -> None:
@@ -154,7 +191,25 @@ class ModelTests(unittest.TestCase):
             )
         self.assertEqual(result, {"answer": "ok"})
         self.assertEqual(fake_api.requests[0]["text"]["format"]["type"], "json_schema")
-        self.assertEqual(fake_api.requests[0]["max_output_tokens"], 8000)
+        # 与配置保持一致，避免把可在 config.yaml 调整的上限写死在测试里。
+        self.assertEqual(
+            fake_api.requests[0]["max_output_tokens"],
+            model.config.section("model")["max_output_tokens"],
+        )
+
+    def test_incomplete_stream_reports_real_reason(self) -> None:
+        """确认被截断的流式响应报出真实原因，而不是 SDK 的笼统 RuntimeError。首次覆盖：S3。"""
+
+        with tempfile.TemporaryDirectory() as temporary:
+            run_dir = Path(temporary) / "run"
+            model, _ = self._model([fake_incomplete_response("resp_1", "被截断的部分输出")], run_dir)
+            with self.assertRaises(ModelError) as context:
+                model.generate_text("提示", "指令")
+            partial = (run_dir / "model_calls/model_call_001_output.txt").read_text(encoding="utf-8")
+        self.assertIn("max_output_tokens", str(context.exception))
+        self.assertIn("max_output_tokens", json.dumps(context.exception.args, ensure_ascii=False))
+        # 截断时的部分输出仍要落盘，便于复盘。
+        self.assertEqual(partial, "被截断的部分输出")
 
     def test_tool_result_uses_previous_response_id(self) -> None:
         """确认工具结果通过 call ID 接回上一条 Responses 会话。首次覆盖：S2。"""
@@ -181,6 +236,40 @@ class ModelTests(unittest.TestCase):
         self.assertEqual(fake_api.requests[1]["previous_response_id"], "resp_1")
         self.assertEqual(fake_api.requests[1]["input"][0]["type"], "function_call_output")
         self.assertEqual(fake_api.requests[1]["input"][0]["call_id"], "call_1")
+
+    def test_replay_profile_resends_previous_output_items(self) -> None:
+        """确认需要回放的 profile 会先补上 reasoning 与 function_call。首次覆盖：S2。"""
+
+        reasoning = fake_output_item(
+            {"type": "reasoning", "id": "rs_1", "content": [{"type": "reasoning_text", "text": "思考"}]}
+        )
+        call_item = fake_output_item(
+            {
+                "type": "function_call",
+                "id": "fc_1",
+                "call_id": "call_1",
+                "name": "search_web",
+                "arguments": '{"query":"AI","date_range":"year"}',
+            }
+        )
+        with tempfile.TemporaryDirectory() as temporary:
+            model, fake_api = self._model(
+                [fake_response("resp_1", "", [reasoning, call_item]), fake_response("resp_2", "完成")],
+                Path(temporary) / "run",
+                replay_previous_output=True,
+            )
+            first_turn = model.start_tool_turn("搜索", "使用工具", [])
+            output = SimpleNamespace(
+                call_id="call_1",
+                to_dict=lambda: {"success": True, "data": {"count": 1}},
+            )
+            model.continue_tool_turn(first_turn.id, [tool_output_item(output)], "总结", [])
+            sent = fake_api.requests[1]["input"]
+            self.assertEqual([item["type"] for item in sent], ["reasoning", "function_call", "function_call_output"])
+            self.assertEqual(sent[1]["call_id"], "call_1")
+            self.assertEqual(sent[2]["call_id"], "call_1")
+        # 回放数据在消费后即释放，避免同一响应被重复回放。
+        self.assertEqual(model._pending_output_items, {})
 
 
 if __name__ == "__main__":

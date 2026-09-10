@@ -245,7 +245,9 @@ def run_research_agent(
 
         state_data = context.state.to_dict() if context.state else None
         plan_data = context.plan.to_dict() if enable_plan and context.plan else None
-        return agent_instructions(config, state_data, plan_data)
+        limits = config.section("limits")
+        remaining = int(limits["max_tool_calls"]) - context.tool_call_count
+        return agent_instructions(config, state_data, plan_data, remaining_tool_calls=remaining)
 
     return run_agent_loop(
         model,

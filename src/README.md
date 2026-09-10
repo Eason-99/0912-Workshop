@@ -35,6 +35,24 @@ S0 的 `draft.md` 直接使用同一份原始 `output_text`；`model_call_001_ou
 
 可运行 `python src/tests/check_api_connections.py` 对两个 profile 分别发起最小真实请求。该脚本不会打印 API Key，也不会被普通单元测试自动调用。
 
+## 工具调用链的服务商差异
+
+`continue_tool_turn()` 默认按标准 OpenAI-compatible 行为，用 `previous_response_id` + `function_call_output` 接回工具结果。DeepSeek 不依据 `previous_response_id` 复原工具调用链，会返回 400 `No tool call found for tool output with call_id ...`。因此 `model.profiles.<name>.replay_previous_output` 控制是否在工具结果前回放上一轮的原始输出项（含 `reasoning`）：`deepseek` 设为 `true`，标准 OpenAI-compatible 端点保持 `false`。新增 profile 时若遇到同类报错，把该项改为 `true` 即可。
+
+另外，S2 的两个教学回合使用 `run_tool_round(..., close_tools=True)`，在回传工具结果的那一轮设置 `tool_choice: none`，由宿主保证“模型选择工具 → runtime 执行 → 模型总结”在固定回合内结束；S4–S7 的 Agent Loop 不设该限制，模型可以继续选择下一个动作。
+
+## 输出截断与 `response.incomplete`
+
+推理模型的思考 token 也计入 `model.max_output_tokens`。当一次请求接近上限时，服务端会以 `response.incomplete`（`incomplete_details.reason = max_output_tokens`）结束；而 OpenAI SDK 的 `get_final_response()` 只承认 `response.completed`，会抛出 `RuntimeError: Didn't receive a response.completed event.` 并丢掉真实原因。`OpenAIModel._stream_response()` 改为显式消费事件流并读取终止事件，因此现在会报出真实原因，同时截断前的部分输出仍会落盘。
+
+实测 S3 抽取 Evidence 的一次调用需要约 18K 输出 token（思考占 11.7K），因此 `max_output_tokens` 设为 32000。若日后仍遇到截断，优先提高该值，或缩小单次请求要生成的内容。
+
+## Agent Loop 的工具额度
+
+`limits.max_tool_calls` 按**逐次工具调用**计数：模型一轮可以并行发起多个调用，额度消耗比轮数快得多。实测 S4 完成「调研 + 交付」需要 41 次调用（17 次搜索 + 23 次读页 + 1 次 `create_ppt`），因此默认额度设为 60、`max_agent_steps` 为 25、`max_model_calls` 为 40。
+
+`agent_instructions()` 每轮会告知模型**剩余额度**，让它为交付预留一次 `create_ppt`。若额度仍被耗尽，loop 的结束原因会记为 `limit_reached`（而不是笼统的 `incomplete`），错误信息中带上 `max_tool_calls` 的实际取值。
+
 ## Stage 对照
 
 | Stage | 模块 | 新增概念 |

@@ -6,7 +6,7 @@ import tempfile
 import unittest
 from unittest.mock import patch
 
-from core.config import ConfigError, load_config
+from core.config import VALID_STAGES, ConfigError, load_config
 
 
 class ConfigTests(unittest.TestCase):
@@ -16,7 +16,8 @@ class ConfigTests(unittest.TestCase):
         """确认仓库内唯一配置可以成功加载。首次覆盖：S0。"""
 
         config = load_config(Path(__file__).resolve().parents[1] / "config.yaml")
-        self.assertEqual(config.stage, "s0_api")
+        # `run.stage` 由使用者按当前要演示的阶段修改，这里只约束它必须是合法阶段。
+        self.assertIn(config.stage, VALID_STAGES)
 
     def test_output_path_cannot_escape_src(self) -> None:
         """确认运行目录不能越过配置所在的 `src` 根目录。首次覆盖：S0。"""

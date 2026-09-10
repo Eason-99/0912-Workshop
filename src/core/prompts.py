@@ -53,10 +53,22 @@ def tool_demo_instructions() -> str:
     return "调用提供的唯一工具完成任务。不要声称自己执行了工具；等待 runtime 返回结果后再简短总结。"
 
 
+def bounded_ppt_prompt(config: AppConfig) -> str:
+    """生成 S2 中只演示 `create_ppt` 且不引用未核验来源的教学 Prompt。首次使用：S2。"""
+
+    return (
+        task_prompt(config)
+        + "\n本阶段只演示把结构化内容交给 create_ppt，不要声称完成了充分调研。"
+        + "\n本阶段没有任何经过 read_page 核验的来源，因此每页 source_ids 必须是空数组，禁止编造 source_id；"
+        + "需要外部数据的数字改为说明当前缺口。"
+    )
+
+
 def agent_instructions(
     config: AppConfig,
     state: dict[str, Any] | None = None,
     plan: dict[str, Any] | None = None,
+    remaining_tool_calls: int | None = None,
 ) -> str:
     """生成 Agent Loop 指令，并按阶段加入可选 State 和 Plan。首次使用：S4。"""
 
@@ -72,6 +84,12 @@ def agent_instructions(
     if plan is not None:
         context_parts.append("当前 Plan：\n" + json.dumps(plan, ensure_ascii=False, indent=2))
         context_parts.append("若 Observation 推翻当前路径，可调用 update_plan，但必须写清依据。")
+    if remaining_tool_calls is not None:
+        # 额度是有限资源，模型必须知道还剩多少才可能为交付预留调用。
+        context_parts.append(
+            f"剩余工具调用额度：{remaining_tool_calls}。交付五页 PPT 至少需要 1 次 create_ppt，"
+            "请为它预留额度；额度耗尽时本轮无法交付。"
+        )
     return "\n\n".join(context_parts)
 
 

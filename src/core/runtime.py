@@ -354,8 +354,13 @@ def run_tool_round(
     prompt: str,
     instructions: str,
     allowed_names: list[str],
+    close_tools: bool = False,
 ) -> str:
-    """执行一次有边界的“模型请求—工具执行—结果回传”教学回合。首次使用：S2。"""
+    """执行一次有边界的“模型请求—工具执行—结果回传”教学回合。首次使用：S2。
+
+    `close_tools=True` 时，回传工具结果的那一轮禁止再次调用工具，强制模型给出文本总结，
+    从而保证回合由宿主结束而不是被模型拖入新的工具调用。
+    """
 
     schemas = registry.schemas(allowed_names)
     response = model.start_tool_turn(prompt, instructions, schemas)
@@ -368,6 +373,7 @@ def run_tool_round(
         [tool_output_item(result) for result in results],
         instructions,
         schemas,
+        tool_choice="none" if close_tools else None,
     )
     return str(getattr(final, "output_text", "")).strip()
 
@@ -384,6 +390,7 @@ def run_agent_loop(
 
     schemas = registry.schemas(allowed_names)
     max_steps = int(context.config.section("limits")["max_agent_steps"])
+    max_tool_calls = int(context.config.section("limits")["max_tool_calls"])
     max_elapsed = int(context.config.section("limits")["max_elapsed_seconds"])
     started_at = time.monotonic()
     response: Any = None
@@ -404,6 +411,16 @@ def run_agent_loop(
                 final_text = str(getattr(response, "output_text", "")).strip()
                 if context.deck is not None:
                     outcome = AgentOutcome("completed", step, final_text, f"deck_v{context.deck_version}.pptx")
+                elif context.tool_call_count >= max_tool_calls:
+                    # 额度耗尽通常发生在模型想调用 create_ppt 却被拒绝之后，
+                    # 此时结束原因应记为额度上限，而不是“模型没有调用工具”。
+                    outcome = AgentOutcome(
+                        "limit_reached",
+                        step,
+                        final_text,
+                        None,
+                        f"工具调用额度已用尽（max_tool_calls={max_tool_calls}），未能生成 PPT",
+                    )
                 else:
                     outcome = AgentOutcome("incomplete", step, final_text, None, "模型结束但未调用 create_ppt")
                 _finish_state(context, outcome.status)
