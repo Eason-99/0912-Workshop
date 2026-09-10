@@ -3,7 +3,7 @@
 
 # 运行入口与产物目录设置；首次使用：S0。
 run:
-  stage: s5_state  # 本次执行的阶段，可选 s0_api、s1_structured、s2_tools、s3_workflow、s4_agent、s5_state、s6_planning、s7_reflection。
+  stage: s3_workflow  # 本次执行的阶段，可选 s0_api、s1_structured、s2_tools、s3_workflow、s4_agent、s5_state、s6_planning、s7_reflection。
   output_dir: runs  # 运行产物根目录；相对于 src 解析，且不允许指向 src 外部。
   run_name: china_ai_landscape  # 运行名称；会与 UTC 时间组合成唯一 run_id，避免覆盖历史结果。
 
@@ -76,8 +76,9 @@ presentation:
 # 实测 S4 在 30 次额度内无法完成「调研 + 交付」，因此默认额度按“能交付”设定，仍保留上限。
 limits:
   max_model_calls: 40  # 一次运行最多允许的模型请求数；首次使用：S0。
-  max_tool_calls: 60  # 一次运行最多允许的工具调用数；首次使用：S2。
-  max_agent_steps: 25  # Agent Loop 最多决策轮数；首次使用：S4。
+  max_tool_calls: 90  # 一次运行最多允许的工具调用数；首次使用：S2。
+  max_research_tool_calls: 60  # search_web/read_page 的独立上限；用尽后 runtime 只接受 create_ppt，保证留出交付窗口。
+  max_agent_steps: 30  # Agent Loop 最多决策轮数；首次使用：S4。实测 S5 用到 25 轮，需留余量。
   max_review_rounds: 2  # 检查后最多允许的 Deck 修订轮数；首次使用：S7。
   max_elapsed_seconds: 900  # Agent Loop 最大运行秒数；首次使用：S4。
 
@@ -87,6 +88,7 @@ review:
   max_chars_per_slide: 260  # 单页全部 bullet 的最大总字符数，超过时生成 warning。
   require_source_for_numeric_claim: true  # 是否把没有 source_id 的数字论断标记为 error。
   require_metric_scope_label: true  # 是否要求份额内容明确写成“样本内 MAU 份额”。
+  require_chart_for_share: true  # 是否要求 s2（样本内 MAU 份额）与 s3（多期趋势）给出图表，或明确声明数据缺口。
 
 # 调试、复现和录屏所需的日志设置；首次使用：S0。
 recording:

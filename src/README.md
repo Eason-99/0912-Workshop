@@ -53,6 +53,38 @@ S0 的 `draft.md` 直接使用同一份原始 `output_text`；`model_call_001_ou
 
 `agent_instructions()` 每轮会告知模型**剩余额度**，让它为交付预留一次 `create_ppt`。若额度仍被耗尽，loop 的结束原因会记为 `limit_reached`（而不是笼统的 `incomplete`），错误信息中带上 `max_tool_calls` 的实际取值。
 
+额度只是上限，真正拖垮长任务的是**重复劳动**。实测一次 S5 跑满 30 轮失败，其中读页 42 次里有 9 次是同一个 URL（199IT 那篇被读了 5 遍），并最终因为引用了只搜索过、没读过的来源而被 `create_ppt` 拒绝。对应的三处防护：
+
+- `execute_call()` 按「工具名 + 规范化参数」缓存成功结果（`read_page` 按 URL 归一，忽略变化的 `source_id`）。重复调用直接返回缓存并标记 `duplicate`，不执行、不消耗额度，并写入 `tool_call_duplicate` 事件；
+- `_search_handler()` 返回 `new_source_count`；为 0 时附上提示，告诉模型该方向已无新信息；
+- `TaskState` 把来源拆成 `verified_source_ids`（已 `read_page`，可被 Deck 引用）与 `candidate_source_ids`（仅搜索候选），模型不必再靠猜。
+
+光有额度上限还不够：实测两次 S5 都在 30 轮内用掉 70 多次调用却始终没有交付（一次根本没调用 `create_ppt`）。因此又加了一道**交付窗口**：`limits.max_research_tool_calls` 单独限制 `search_web` / `read_page`，用尽后 runtime 只接受 `create_ppt`，并返回“只能用已核验来源生成五页 Deck，拿不到同口径数据就写成缺口”。每轮指令同时报出当前轮次与剩余额度，并要求剩余不足三分之一时必须交付。
+
+`create_ppt` 被拒时的报错也补上了下一步动作（先 `read_page` 核对，或移除这些来源），模型据此能自己修回来——实测一次运行里第一次 `create_ppt` 因引用未核验来源失败，模型按提示改完后第二次成功交付。
+
+## 页面图表
+
+`DeckSpec` 的每一页都带 `chart` 字段，`type` 取 `none` / `bar` / `line`。它不是可选字段——JSON Schema 是 strict 的，可选字段会被服务端拒绝，因此用 `type: "none"` 表达“本页无图”。
+
+三层协作：
+
+| 层 | 位置 | 职责 |
+| --- | --- | --- |
+| 契约 | `core/contracts.py: chart_schema()` / `_validate_chart()` | 约束结构，并拒绝缺分类、缺序列或 `values` 与 `categories` 不等长的图 |
+| 渲染 | `tools/presentation.py: _add_chart()` | 用 python-pptx 生成**原生可编辑图表**；有图时正文缩到左半版面 |
+| 要求 | `core/prompts.py: chart_rules()` | s2 必须画“样本内 MAU 份额”柱状图；s3 只有凑齐 ≥3 个同口径时间点才画折线，否则留空并声明缺口 |
+
+Review 侧加了两条规则（`review.require_chart_for_share`）：s2/s3 既没有图也没有缺口声明时报 `chart_missing`；有图但与 `bullets` 无法对应、数值长度不一致或整页没有来源时报 `invalid_chart` / `chart_without_source`。只有 s2/s3 受“必须有图”约束——s1、s5 这类叙述页提到“份额”通常只是口径说明，不应强制配图。
+
+## 文本框换行
+
+`python-pptx` 的 `add_textbox()` 默认写出 `<a:bodyPr wrap="none"><a:spAutoFit/></a:bodyPr>`，含义是**不自动换行**：文字会沿单行向右溢出文本框，只有在 PowerPoint 里手动拖一下形状、触发重新排版时才会缩回来。`_add_textbox()` 因此显式设置了 `word_wrap = True`、`auto_size = MSO_AUTO_SIZE.NONE`，并把四边内边距归零（`lIns/rIns/tIns/bIns = 0`），让代码里的英寸坐标就是文本的实际起点。`tests/test_presentation.py` 会直接解包 PPTX 断言 `wrap="square"` 且不含 `spAutoFit`。
+
+换行生效后文字会变高，所以同一处还加了确定性的自动适配：`_estimate_line_count()` 按框宽估算换行后的行数（全角字符记 1 个宽度单位、半角记 0.55），`_fit_font_size()` 从首选字号逐磅下调直到放进文本框（正文 18pt→最低 10pt，有图页 14pt 起，标题 26pt→最低 16pt）。缩过字的页面会出现在 `create_ppt()` 返回值的 `shrunk_font_pages` 里，便于确认。
+
+这里刻意没有用 `MSO_AUTO_SIZE.TEXT_TO_FIT_SHAPE`（normAutofit）：它依赖 PowerPoint 打开后重新排版才写入 `fontScale`，在写入之前查看仍会溢出——和上面那个 `wrap="none"` 属于同一类“要手动碰一下才生效”的问题。字号在代码里算，结果才是可复现的。
+
 ## Stage 对照
 
 | Stage | 模块 | 新增概念 |

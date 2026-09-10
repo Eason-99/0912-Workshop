@@ -11,6 +11,13 @@ from core.config import AppConfig
 
 NUMERIC_PATTERN = re.compile(r"\d+(?:[.,]\d+)?(?:万|亿|%|人|次)?")
 
+# 允许“有数据但不画图”的显式说法：必须让读者看到缺口声明，而不是直接缺图。
+GAP_MARKERS = ("缺口", "缺失", "未获得", "未披露", "无法", "无同口径", "不足三", "不足 3")
+
+# 大纲里定义要呈现数据的页面：s2 是同口径 MAU 与样本内份额，s3 是多期趋势。
+# 其余页面是叙述页，提到“份额”通常只是口径说明，不应强制配图。
+CHART_REQUIRED_SLIDES = {"s2", "s3"}
+
 
 def _issue(
     issue_id: str,
@@ -80,6 +87,41 @@ def check_deck(
                 _issue(f"issue_{counter}", slide_id, "share_label", "error", "份额标签不完整", "统一写为“样本内 MAU 份额”")
             )
             counter += 1
+        chart = slide.get("chart") or {}
+        chart_type = str(chart.get("type", "none"))
+        if chart_type in {"bar", "line"}:
+            # 有图时先确认数据自洽，避免画出空图或长度错位的图。
+            categories = chart.get("categories") or []
+            series = chart.get("series") or []
+            if not categories or not series:
+                issues.append(
+                    _issue(f"issue_{counter}", slide_id, "invalid_chart", "error", chart_type, "补齐 categories 与 series，或改为 type=none")
+                )
+                counter += 1
+            elif any(len(item.get("values", [])) != len(categories) for item in series):
+                issues.append(
+                    _issue(f"issue_{counter}", slide_id, "invalid_chart", "error", "数值与分类数量不一致", "让每个 series 的 values 与 categories 等长")
+                )
+                counter += 1
+            if not slide["source_ids"]:
+                issues.append(
+                    _issue(f"issue_{counter}", slide_id, "chart_without_source", "error", "图表无来源", "为图表补上已读取的来源，或删除图表")
+                )
+                counter += 1
+        elif review.get("require_chart_for_share", True) and slide_id in CHART_REQUIRED_SLIDES:
+            # 这两页天然需要图；实在没有同口径数据时必须写明缺口，而不是直接缺图。
+            if not any(marker in joined for marker in GAP_MARKERS):
+                issues.append(
+                    _issue(
+                        f"issue_{counter}",
+                        slide_id,
+                        "chart_missing",
+                        "warning",
+                        "该页涉及份额或多期数值但没有图表",
+                        "补充同口径图表，或明确写出数据缺口",
+                    )
+                )
+                counter += 1
     if pptx_path and pptx_path.exists():
         for bounds_issue in check_ppt_bounds(pptx_path, counter):
             issues.append(bounds_issue)

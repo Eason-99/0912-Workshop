@@ -255,7 +255,7 @@ State 的更新链是：
 ToolResult
   ↓
 _record_tool_result
-  ├─ 成功：current_step、completed_actions、source_ids 等变化
+  ├─ 成功：current_step、completed_actions、verified/candidate_source_ids 等变化
   ├─ 失败：open_questions 增加失败信息
   └─ persist_state → state.json
   ↓
@@ -268,7 +268,7 @@ State JSON 再发送给模型
 
 State 使执行事实可见、可审计，不必只依赖模型“记得”。但当前实现是精简 Demo：
 
-- `source_ids` 会随搜索和读页结果更新；
+- `candidate_source_ids` 记录只搜索到的候选来源，`verified_source_ids` 记录已 `read_page` 核对、可被 Deck 引用的来源；
 - `completed_actions` 记录成功的工具名；
 - `current_deck` 在 PPT 创建后更新；
 - `open_questions` 当前主要记录工具失败，不会自动从网页内容推断研究缺口；

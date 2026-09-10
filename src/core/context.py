@@ -25,6 +25,11 @@ class ExecutionContext:
     plan: PlanState | None = None
     deck_version: int = 0
     tool_call_count: int = 0
+    # 当前 Agent Loop 轮次，供 instructions_factory 报进度。
+    agent_step: int = 0
+    # 成功执行过的调用（按“工具名 + 规范化参数”作键），用于拦住重复动作。
+    executed_calls: dict[str, dict[str, Any]] = field(default_factory=dict)
+    duplicate_call_count: int = 0
 
     def persist_sources(self) -> None:
         """把当前标准化来源集合写入 `sources.json`。首次使用：S2。"""

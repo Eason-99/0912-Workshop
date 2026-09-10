@@ -207,6 +207,7 @@ def _validate_config(data: dict[str, Any], src_dir: Path) -> None:
     for field in (
         "max_model_calls",
         "max_tool_calls",
+        "max_research_tool_calls",
         "max_agent_steps",
         "max_review_rounds",
         "max_elapsed_seconds",

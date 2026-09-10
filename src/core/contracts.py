@@ -42,7 +42,10 @@ class TaskState:
     goal: str
     metric_scope: dict[str, Any]
     selected_products: list[str] = field(default_factory=list)
-    source_ids: list[str] = field(default_factory=list)
+    # 只有 verified_source_ids 里的来源才经过 read_page 核对，Deck 只能引用这一组；
+    # candidate_source_ids 只是搜索结果，让模型能区分“见过”和“可用”。
+    verified_source_ids: list[str] = field(default_factory=list)
+    candidate_source_ids: list[str] = field(default_factory=list)
     open_questions: list[str] = field(default_factory=list)
     completed_actions: list[str] = field(default_factory=list)
     current_deck: str | None = None
@@ -86,6 +89,32 @@ def _string_array_schema() -> dict[str, Any]:
     return {"type": "array", "items": {"type": "string"}}
 
 
+def chart_schema() -> dict[str, Any]:
+    """生成页面图表数据的严格 Schema；`type=none` 表示本页没有图表。首次使用：S3。"""
+
+    series = {
+        "type": "object",
+        "properties": {
+            "name": {"type": "string"},
+            "values": {"type": "array", "items": {"type": "number"}},
+        },
+        "required": ["name", "values"],
+        "additionalProperties": False,
+    }
+    return {
+        "type": "object",
+        "properties": {
+            "type": {"type": "string", "enum": ["none", "bar", "line"]},
+            "title": {"type": "string"},
+            "unit": {"type": "string"},
+            "categories": _string_array_schema(),
+            "series": {"type": "array", "items": series},
+        },
+        "required": ["type", "title", "unit", "categories", "series"],
+        "additionalProperties": False,
+    }
+
+
 def deck_schema(slide_count: int = 5) -> dict[str, Any]:
     """生成模型输出和 PPT 工具共用的严格 `DeckSpec` Schema。首次使用：S1。"""
 
@@ -97,8 +126,9 @@ def deck_schema(slide_count: int = 5) -> dict[str, Any]:
             "bullets": _string_array_schema(),
             "source_ids": _string_array_schema(),
             "speaker_notes": {"type": "string"},
+            "chart": chart_schema(),
         },
-        "required": ["id", "title", "bullets", "source_ids", "speaker_notes"],
+        "required": ["id", "title", "bullets", "source_ids", "speaker_notes", "chart"],
         "additionalProperties": False,
     }
     return {
@@ -209,6 +239,7 @@ def deck_patch_schema() -> dict[str, Any]:
             "bullets": _string_array_schema(),
             "source_ids": _string_array_schema(),
             "speaker_notes": {"type": "string"},
+            "chart": chart_schema(),
             "reason": {"type": "string"},
             "issue_ids": _string_array_schema(),
         },
@@ -218,6 +249,7 @@ def deck_patch_schema() -> dict[str, Any]:
             "bullets",
             "source_ids",
             "speaker_notes",
+            "chart",
             "reason",
             "issue_ids",
         ],
@@ -241,10 +273,13 @@ def validate_deck(deck: dict[str, Any], slide_count: int = 5) -> dict[str, Any]:
         raise ContractError(f"DeckSpec.slides 必须恰好包含 {slide_count} 页")
     expected_ids = [f"s{index}" for index in range(1, slide_count + 1)]
     actual_ids: list[str] = []
-    required = {"id", "title", "bullets", "source_ids", "speaker_notes"}
+    required = {"id", "title", "bullets", "source_ids", "speaker_notes", "chart"}
     for index, slide in enumerate(slides, start=1):
-        if not isinstance(slide, dict) or set(slide) != required:
-            raise ContractError(f"第 {index} 页字段必须恰好为 {sorted(required)}")
+        if not isinstance(slide, dict) or not required.issubset(slide):
+            raise ContractError(f"第 {index} 页缺少必需字段：{sorted(required - set(slide or {}))}")
+        unknown = sorted(set(slide) - required)
+        if unknown:
+            raise ContractError(f"第 {index} 页包含未知字段：{unknown}")
         if not all(isinstance(slide[key], str) for key in ("id", "title", "speaker_notes")):
             raise ContractError(f"第 {index} 页 id/title/speaker_notes 必须是字符串")
         if not all(
@@ -252,10 +287,52 @@ def validate_deck(deck: dict[str, Any], slide_count: int = 5) -> dict[str, Any]:
             for key in ("bullets", "source_ids")
         ):
             raise ContractError(f"第 {index} 页 bullets/source_ids 必须是字符串数组")
+        _validate_chart(slide["chart"], index)
         actual_ids.append(slide["id"])
     if actual_ids != expected_ids:
         raise ContractError(f"页面 ID 必须依次为 {expected_ids}")
     return deck
+
+
+def _validate_chart(chart: Any, page_index: int) -> None:
+    """校验页面图表字段的类型与内部一致性。首次使用：S3。"""
+
+    fields = {"type", "title", "unit", "categories", "series"}
+    if not isinstance(chart, dict) or set(chart) != fields:
+        raise ContractError(f"第 {page_index} 页 chart 字段必须恰好为 {sorted(fields)}")
+    chart_type = chart["type"]
+    if chart_type not in {"none", "bar", "line"}:
+        raise ContractError(f"第 {page_index} 页 chart.type 必须是 none/bar/line")
+    if not isinstance(chart["title"], str) or not isinstance(chart["unit"], str):
+        raise ContractError(f"第 {page_index} 页 chart.title/unit 必须是字符串")
+    categories = chart["categories"]
+    if not isinstance(categories, list) or not all(isinstance(item, str) for item in categories):
+        raise ContractError(f"第 {page_index} 页 chart.categories 必须是字符串数组")
+    series = chart["series"]
+    if not isinstance(series, list):
+        raise ContractError(f"第 {page_index} 页 chart.series 必须是数组")
+    for item in series:
+        if not isinstance(item, dict) or set(item) != {"name", "values"}:
+            raise ContractError(f"第 {page_index} 页 chart.series 每项必须恰好含 name/values")
+        if not isinstance(item["name"], str):
+            raise ContractError(f"第 {page_index} 页 chart.series[].name 必须是字符串")
+        values = item["values"]
+        if not isinstance(values, list) or not all(
+            isinstance(value, (int, float)) and not isinstance(value, bool) for value in values
+        ):
+            raise ContractError(f"第 {page_index} 页 chart.series[].values 必须是数值数组")
+    if chart_type == "none":
+        return
+    # 有图时数据必须自洽：不能缺分类、缺序列，或长度对不上。
+    if not categories:
+        raise ContractError(f"第 {page_index} 页图表缺少 categories")
+    if not series:
+        raise ContractError(f"第 {page_index} 页图表缺少 series")
+    for item in series:
+        if len(item["values"]) != len(categories):
+            raise ContractError(
+                f"第 {page_index} 页图表 series `{item['name']}` 的数值个数与 categories 不一致"
+            )
 
 
 def validate_products(products: list[Any], minimum: int, maximum: int) -> list[str]:
@@ -290,6 +367,7 @@ def apply_deck_patches(deck: dict[str, Any], patch_data: dict[str, Any]) -> dict
             "bullets": patch["bullets"],
             "source_ids": patch["source_ids"],
             "speaker_notes": patch["speaker_notes"],
+            "chart": patch["chart"],
         }
     revised = {"title": deck["title"], "slides": [slides[f"s{i}"] for i in range(1, len(slides) + 1)]}
     return validate_deck(revised, len(deck["slides"]))

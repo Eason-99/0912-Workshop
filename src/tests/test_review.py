@@ -29,6 +29,37 @@ class ReviewTests(unittest.TestCase):
         issue_types = {item["type"] for item in check_deck(deck, set(), config)}
         self.assertIn("share_label", issue_types)
 
+    def test_share_page_without_chart_or_gap_is_flagged(self) -> None:
+        """确认份额页既没有图表也没有缺口声明时会被标记。首次覆盖：S7。"""
+
+        config = load_config(Path(__file__).resolve().parents[1] / "config.yaml")
+        deck = sample_deck()
+        deck["slides"][1]["bullets"] = ["样本内 MAU 份额：豆包 49.9%、千问 21.9%"]
+        issue_types = {
+            item["type"] for item in check_deck(deck, set(), config) if item["slide_id"] == "s2"
+        }
+        self.assertIn("chart_missing", issue_types)
+
+    def test_share_page_with_chart_passes_chart_rule(self) -> None:
+        """确认给出自洽图表后不再报缺图。首次覆盖：S7。"""
+
+        config = load_config(Path(__file__).resolve().parents[1] / "config.yaml")
+        deck = sample_deck()
+        deck["slides"][1]["bullets"] = ["样本内 MAU 份额：豆包 49.9%、千问 21.9%"]
+        deck["slides"][1]["source_ids"] = ["src_1"]
+        deck["slides"][1]["chart"] = {
+            "type": "bar",
+            "title": "样本内 MAU 份额",
+            "unit": "%",
+            "categories": ["豆包", "千问"],
+            "series": [{"name": "样本内 MAU 份额", "values": [49.9, 21.9]}],
+        }
+        issue_types = {
+            item["type"] for item in check_deck(deck, {"src_1"}, config) if item["slide_id"] == "s2"
+        }
+        self.assertNotIn("chart_missing", issue_types)
+        self.assertNotIn("invalid_chart", issue_types)
+
 
 if __name__ == "__main__":
     unittest.main()

@@ -23,6 +23,9 @@ from core.recorder import Recorder
 from tools.presentation import create_ppt, patch_deck
 from tools.research import read_page, search_web
 
+# 只有这两个工具会访问外部网络，也是长任务里唯一可能无限膨胀的动作。
+RESEARCH_TOOLS = {"search_web", "read_page"}
+
 
 @dataclass
 class ToolDefinition:
@@ -145,6 +148,8 @@ def _validate_schema_value(value: Any, schema: dict[str, Any], path: str) -> Non
             _validate_schema_value(item, schema.get("items", {}), f"{path}[{index}]")
     elif expected == "string" and not isinstance(value, str):
         raise ValueError(f"{path} 必须是 string")
+    elif expected == "number" and (not isinstance(value, (int, float)) or isinstance(value, bool)):
+        raise ValueError(f"{path} 必须是 number")
     elif expected == "integer" and (not isinstance(value, int) or isinstance(value, bool)):
         raise ValueError(f"{path} 必须是 integer")
     if "enum" in schema and value not in schema["enum"]:
@@ -155,9 +160,18 @@ def _search_handler(arguments: dict[str, Any], context: ExecutionContext) -> dic
     """执行网页搜索，并把候选结果加入来源集合。首次使用：S2。"""
 
     result = search_web(arguments["query"], context.config, arguments.get("date_range", ""))
+    # 先判断哪些是此前没见过的新来源，再写入 context，供模型判断该方向是否还有信息。
+    known = set(context.sources)
+    new_count = sum(1 for source in result["results"] if source["source_id"] not in known)
     for source in result["results"]:
         context.sources[source["source_id"]] = source
     context.persist_sources()
+    result["new_source_count"] = new_count
+    if not new_count:
+        result["note"] = (
+            "本次搜索没有返回任何新来源，说明该方向已无新信息。"
+            "请换查询方向、改用已读来源，或把缺口写进结论，不要重复同一方向的搜索。"
+        )
     return result
 
 
@@ -186,7 +200,10 @@ def _create_ppt_handler(arguments: dict[str, Any], context: ExecutionContext) ->
         if context.sources.get(source_id, {}).get("status") != "page_read"
     )
     if unread:
-        raise ValueError(f"PPT 引用了尚未 read_page 核对的来源：{unread}")
+        raise ValueError(
+            f"PPT 引用了尚未 read_page 核对的来源：{unread}。"
+            "请先 read_page 核对这些来源，或从页面中移除它们、只引用已核验来源。"
+        )
     next_version = context.deck_version + 1
     json_name = f"deck_v{next_version}.json"
     pptx_name = f"deck_v{next_version}.pptx"
@@ -302,13 +319,20 @@ def _record_tool_result(context: ExecutionContext, result: ToolResult, save_payl
     context.state.current_step += 1
     if result.success:
         context.state.completed_actions.append(result.name)
-        if result.name in {"search_web", "read_page"}:
-            ids = []
-            if result.name == "search_web":
-                ids = [item["source_id"] for item in result.data.get("results", [])]
-            elif result.data.get("source_id"):
-                ids = [result.data["source_id"]]
-            context.state.source_ids = list(dict.fromkeys(context.state.source_ids + ids))
+        if result.name == "search_web":
+            ids = [item["source_id"] for item in result.data.get("results", [])]
+            context.state.candidate_source_ids = list(
+                dict.fromkeys(context.state.candidate_source_ids + ids)
+            )
+        elif result.name == "read_page" and result.data.get("source_id"):
+            # 读页成功后该来源升级为已核验，并从候选列表移出。
+            source_id = str(result.data["source_id"])
+            context.state.verified_source_ids = list(
+                dict.fromkeys(context.state.verified_source_ids + [source_id])
+            )
+            context.state.candidate_source_ids = [
+                item for item in context.state.candidate_source_ids if item != source_id
+            ]
     else:
         context.state.open_questions.append(f"{result.name} 失败：{result.error}")
     context.persist_state()
@@ -320,21 +344,67 @@ def execute_call(
     context: ExecutionContext,
     allowed_names: list[str],
 ) -> ToolResult:
-    """执行调用前检查阶段工具白名单和全局调用次数上限。首次使用：S2。"""
+    """执行调用前检查重复、阶段工具白名单和全局调用次数上限。首次使用：S2。"""
+
+    save_payloads = context.config.section("recording").get("save_tool_payloads", True)
+    key = _call_key(call)
+    cached = context.executed_calls.get(key)
+    if cached is not None:
+        # 完全相同的动作已经成功执行过：直接复用结果，不再消耗额度，并明确提醒模型。
+        context.duplicate_call_count += 1
+        payload = dict(cached["data"] or {})
+        payload["duplicate"] = True
+        payload["note"] = (
+            "该调用此前已经执行过，这里返回的是缓存结果，且不消耗额外额度。"
+            "请勿重复同一动作，改为换方向或把缺口写进结论。"
+        )
+        result = ToolResult(call.call_id, call.name, True, data=payload)
+        context.recorder.record(
+            "tool_call_duplicate", call_id=call.call_id, tool_name=call.name, cached_call=key
+        )
+        _record_tool_result(context, result, save_payloads)
+        return result
 
     limit = int(context.config.section("limits")["max_tool_calls"])
     if context.tool_call_count >= limit:
         return ToolResult(call.call_id, call.name, False, error=f"达到 max_tool_calls={limit}")
+    research_limit = int(context.config.section("limits").get("max_research_tool_calls", 0) or 0)
+    if call.name in RESEARCH_TOOLS and research_limit and context.tool_call_count >= research_limit:
+        # 调研额度单独设上限，保证总能在剩下的步数里完成交付，而不是把额度全花在检索上。
+        result = ToolResult(
+            call.call_id,
+            call.name,
+            False,
+            error=(
+                f"调研工具额度已用尽（max_research_tool_calls={research_limit}）。"
+                "现在只能调用 create_ppt 交付：请用已 read_page 的 verified_source_ids 生成五页 Deck，"
+                "拿不到同口径的数据就写成缺口。"
+            ),
+        )
+        context.recorder.record("tool_call", call_id=call.call_id, tool_name=call.name)
+        _record_tool_result(context, result, save_payloads)
+        return result
     context.tool_call_count += 1
-    save_payloads = context.config.section("recording").get("save_tool_payloads", True)
     call_payload = {"arguments": call.arguments} if save_payloads else {}
     context.recorder.record("tool_call", call_id=call.call_id, tool_name=call.name, **call_payload)
     if call.name not in allowed_names:
         result = ToolResult(call.call_id, call.name, False, error="当前 Stage 未开放该工具")
     else:
         result = registry.execute(call, context)
+    if result.success:
+        # 只缓存成功结果：失败可能来自临时网络问题，允许模型再试一次。
+        context.executed_calls[key] = {"data": result.data}
     _record_tool_result(context, result, save_payloads)
     return result
+
+
+def _call_key(call: ToolCall) -> str:
+    """为重复检测生成调用键；read_page 按 URL 归一，忽略可能变化的 source_id。首次使用：S4。"""
+
+    arguments = dict(call.arguments)
+    if call.name == "read_page":
+        arguments.pop("source_id", None)
+    return f"{call.name}:{json.dumps(arguments, sort_keys=True, ensure_ascii=False)}"
 
 
 def tool_output_item(result: ToolResult) -> dict[str, Any]:
@@ -397,6 +467,7 @@ def run_agent_loop(
     outputs: list[dict[str, Any]] = []
     try:
         for step in range(1, max_steps + 1):
+            context.agent_step = step
             if time.monotonic() - started_at > max_elapsed:
                 outcome = AgentOutcome("limit_reached", step - 1, "", None, f"达到 max_elapsed_seconds={max_elapsed}")
                 _finish_state(context, outcome.status)

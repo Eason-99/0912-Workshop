@@ -36,11 +36,23 @@ def task_prompt(config: AppConfig) -> str:
 """
 
 
+def chart_rules() -> str:
+    """生成各阶段共用的图表要求，供 Deck 写作和 Agent 指令复用。首次使用：S3。"""
+
+    return """图表要求：每页都必须给出 chart 字段，没有同口径数据时用 type="none"。
+- s2「最新竞争格局」必须用 type="bar" 画“样本内 MAU 份额”：categories 为产品名，series 为 [{"name": "样本内 MAU 份额", "values": [百分数数值]}]，unit 为 "%"。
+- s3「最近 12 个月变化」只有凑齐 ≥3 个同口径时间点时才用 type="line" 画趋势；凑不齐就保持 type="none"，并在 bullets 中写明缺失的时间点。
+- 其余页面没有同口径数据时一律 type="none"，categories 与 series 留空数组。
+- chart 的数值必须来自已 read_page 核对的来源，values 与 categories 等长，不得为凑图编造数字。"""
+
+
 def deck_instructions(config: AppConfig, source_context: str = "") -> str:
     """生成约束五页 `DeckSpec` 写作和来源引用的指令。首次使用：S1。"""
 
     task = config.section("task")
     return f"""你是严谨的商业研究演示文稿作者。输出必须符合给定 JSON Schema，恰好 {task['slide_count']} 页，页面 ID 依次为 s1–s{task['slide_count']}。每页不超过 6 个 bullet。只引用上下文中真实存在的 source_id；没有可靠数据时说明缺口，不补造数字。
+
+{chart_rules()}
 
 来源上下文：
 {source_context or '当前阶段未提供联网来源，因此不得声称已经完成实时检索。'}
@@ -69,15 +81,22 @@ def agent_instructions(
     state: dict[str, Any] | None = None,
     plan: dict[str, Any] | None = None,
     remaining_tool_calls: int | None = None,
+    step: int | None = None,
+    max_steps: int | None = None,
 ) -> str:
     """生成 Agent Loop 指令，并按阶段加入可选 State 和 Plan。首次使用：S4。"""
 
     context_parts = [
         "你是调研与 PPT 制作 Agent。根据工具 Observation 决定下一步。",
         "先搜索候选来源，再 read_page 核对正文。搜索摘要不能直接当作关键数字证据。",
+        "create_ppt 只能引用 State 中 verified_source_ids 里的来源；candidate_source_ids 只是搜索候选，引用会被 runtime 拒绝。",
+        "若搜索结果返回 new_source_count=0，说明该方向已无新信息：立即停止这个方向，改用已读来源或把缺口写进结论，不要换几个近义词反复搜同一件事。",
+        "调研额度用尽后 runtime 只接受 create_ppt。交付本身就是任务的一部分：证据够写五页就交付，不要为了追求完整而把额度耗尽。",
+        "同一指标若检索若干次仍拿不到同口径数据，就按缺口处理并交付，不要为了凑时间点无限检索。",
         "只把同指标、同地区、同终端范围的数据放入同一比较。找不到时保留缺口。",
         "完成五页 DeckSpec 后必须调用 create_ppt；create_ppt 成功即表示本阶段交付完成。",
         f"最多选择 {config.section('task')['product_count_max']} 款产品。",
+        chart_rules(),
     ]
     if state is not None:
         context_parts.append("当前可信 State：\n" + json.dumps(state, ensure_ascii=False, indent=2))
@@ -86,9 +105,10 @@ def agent_instructions(
         context_parts.append("若 Observation 推翻当前路径，可调用 update_plan，但必须写清依据。")
     if remaining_tool_calls is not None:
         # 额度是有限资源，模型必须知道还剩多少才可能为交付预留调用。
+        progress = f"当前第 {step} 轮（上限 {max_steps} 轮）。" if step and max_steps else ""
         context_parts.append(
-            f"剩余工具调用额度：{remaining_tool_calls}。交付五页 PPT 至少需要 1 次 create_ppt，"
-            "请为它预留额度；额度耗尽时本轮无法交付。"
+            f"{progress}剩余工具调用额度：{remaining_tool_calls}。交付五页 PPT 至少需要 1 次 create_ppt，"
+            "请为它预留额度；剩余额度或剩余轮次不足三分之一时，必须停止检索、立即交付。"
         )
     return "\n\n".join(context_parts)
 

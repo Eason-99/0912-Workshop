@@ -247,7 +247,14 @@ def run_research_agent(
         plan_data = context.plan.to_dict() if enable_plan and context.plan else None
         limits = config.section("limits")
         remaining = int(limits["max_tool_calls"]) - context.tool_call_count
-        return agent_instructions(config, state_data, plan_data, remaining_tool_calls=remaining)
+        return agent_instructions(
+            config,
+            state_data,
+            plan_data,
+            remaining_tool_calls=remaining,
+            step=getattr(context, "agent_step", None),
+            max_steps=int(limits["max_agent_steps"]),
+        )
 
     return run_agent_loop(
         model,

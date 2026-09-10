@@ -7,8 +7,9 @@ from stages.common import build_comparability_report
 
 
 def sample_deck() -> dict:
-    """构造合法的五页最小 Deck 测试夹具。首次覆盖：S1。"""
+    """构造合法的五页最小 Deck 测试夹具（含空图表）。首次覆盖：S1。"""
 
+    no_chart = {"type": "none", "title": "", "unit": "", "categories": [], "series": []}
     return {
         "title": "测试 Deck",
         "slides": [
@@ -18,6 +19,7 @@ def sample_deck() -> dict:
                 "bullets": ["测试内容"],
                 "source_ids": [],
                 "speaker_notes": "",
+                "chart": dict(no_chart),
             }
             for index in range(1, 6)
         ],
@@ -80,6 +82,7 @@ class ContractTests(unittest.TestCase):
                         "bullets": ["样本内 MAU 份额"],
                         "source_ids": [],
                         "speaker_notes": "修订",
+                        "chart": {"type": "none", "title": "", "unit": "", "categories": [], "series": []},
                         "reason": "修正标签",
                         "issue_ids": ["issue_1"],
                     }
@@ -88,6 +91,33 @@ class ContractTests(unittest.TestCase):
         )
         self.assertEqual(revised["slides"][1]["title"], "修订页")
         self.assertEqual(revised["slides"][0], deck["slides"][0])
+
+    def test_validate_deck_rejects_inconsistent_chart(self) -> None:
+        """确认图表数值与分类数量不一致时会被拒绝。首次覆盖：S3。"""
+
+        deck = sample_deck()
+        deck["slides"][1]["chart"] = {
+            "type": "bar",
+            "title": "样本内 MAU 份额",
+            "unit": "%",
+            "categories": ["豆包", "千问"],
+            "series": [{"name": "样本内 MAU 份额", "values": [49.9]}],
+        }
+        with self.assertRaises(ContractError):
+            validate_deck(deck)
+
+    def test_validate_deck_accepts_consistent_chart(self) -> None:
+        """确认自洽的柱状图可以通过契约校验。首次覆盖：S3。"""
+
+        deck = sample_deck()
+        deck["slides"][1]["chart"] = {
+            "type": "bar",
+            "title": "样本内 MAU 份额",
+            "unit": "%",
+            "categories": ["豆包", "千问"],
+            "series": [{"name": "样本内 MAU 份额", "values": [49.9, 21.9]}],
+        }
+        self.assertEqual(len(validate_deck(deck)["slides"]), 5)
 
 
 if __name__ == "__main__":
