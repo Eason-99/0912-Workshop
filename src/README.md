@@ -37,7 +37,19 @@ S0 的 `draft.md` 直接使用同一份原始 `output_text`；`model_call_001_ou
 
 ## 工具调用链的服务商差异
 
-`continue_tool_turn()` 默认按标准 OpenAI-compatible 行为，用 `previous_response_id` + `function_call_output` 接回工具结果。DeepSeek 不依据 `previous_response_id` 复原工具调用链，会返回 400 `No tool call found for tool output with call_id ...`。因此 `model.profiles.<name>.replay_previous_output` 控制是否在工具结果前回放上一轮的原始输出项（含 `reasoning`）：`deepseek` 设为 `true`，标准 OpenAI-compatible 端点保持 `false`。新增 profile 时若遇到同类报错，把该项改为 `true` 即可。
+标准做法是用 `previous_response_id` + `function_call_output` 接回工具结果，由服务端自己关联那条工具调用。但实测两个 profile 都不这么做：它们会接受 `previous_response_id` 却完全不解释它（传一个不存在的 UUID 也照样返回 200），于是收到 `function_call_output` 时就报 400 `No tool call found for function call output with call_id ...`。
+
+`model.profiles.<name>.tool_call_replay` 控制这种情况下的回放策略，三档：
+
+| 取值 | 行为 | 适用 |
+| --- | --- | --- |
+| `none` | 只发 `function_call_output` | 真正实现会话存储的标准端点 |
+| `function_call` | 先补最小化的 `function_call` 项（仅 type/call_id/name/arguments） | 第三方 profile；回放完整输出项会被它拒绝（`Unknown parameter: 'input[0].status'`） |
+| `full` | 回放上一轮完整输出项，含 `reasoning` | DeepSeek；只补 `function_call` 会报 `reasoning_text must be passed back` |
+
+新增 profile 时若遇到同类 400，先试 `function_call`，再试 `full`。旧的布尔开关 `replay_previous_output` 仍被兼容（`true` 等价于 `full`）。
+
+推理模型还会在每个响应里消耗大量思考 token。实测 DeepSeek 一次调用最多产生 11K 思考 token、耗时 182 秒，18 次串行调用就撞到 `max_elapsed_seconds=900`。`model.profiles.<name>.reasoning_effort` 可设为 `low` / `medium` / `high`（不设则不发送该参数），`deepseek` 默认 `low`，实测能把单次思考耗时砍掉约一半。
 
 另外，S2 的两个教学回合使用 `run_tool_round(..., close_tools=True)`，在回传工具结果的那一轮设置 `tool_choice: none`，由宿主保证“模型选择工具 → runtime 执行 → 模型总结”在固定回合内结束；S4–S7 的 Agent Loop 不设该限制，模型可以继续选择下一个动作。
 
@@ -84,6 +96,39 @@ Review 侧加了两条规则（`review.require_chart_for_share`）：s2/s3 既�
 换行生效后文字会变高，所以同一处还加了确定性的自动适配：`_estimate_line_count()` 按框宽估算换行后的行数（全角字符记 1 个宽度单位、半角记 0.55），`_fit_font_size()` 从首选字号逐磅下调直到放进文本框（正文 18pt→最低 10pt，有图页 14pt 起，标题 26pt→最低 16pt）。缩过字的页面会出现在 `create_ppt()` 返回值的 `shrunk_font_pages` 里，便于确认。
 
 这里刻意没有用 `MSO_AUTO_SIZE.TEXT_TO_FIT_SHAPE`（normAutofit）：它依赖 PowerPoint 打开后重新排版才写入 `fontScale`，在写入之前查看仍会溢出——和上面那个 `wrap="none"` 属于同一类“要手动碰一下才生效”的问题。字号在代码里算，结果才是可复现的。
+
+另外三处容易踩的排版坑也一并修了：`_style_paragraph()` 会在 `latin` 之外补 `<a:ea>` / `<a:cs>`（否则中文字体不生效）；正文每条 bullet 拆成独立段落并显式设置 `line_spacing` 与 `space_after`（否则行距由主题默认值决定，和估算不一致）；正文框高度按估算行数收紧，不再留一截空白。
+
+## 版式与主题（模式开关）
+
+`presentation.layout_mode` 决定页面结构由谁决定：
+
+| 模式 | 行为 |
+| --- | --- |
+| `fixed`（默认） | 版式固定为 `bullets`，输出与历史版本一致 |
+| `adaptive` | 模型可在 `presentation.layouts` 列出的版式里自选 |
+
+五种版式的词表定义在 `core/contracts.py: KNOWN_LAYOUTS`，渲染实现在 `tools/presentation.py: LAYOUT_RENDERERS`，`tests/test_presentation.py` 断言两者一致。
+
+| 版式 | 渲染 | 适用 |
+| --- | --- | --- |
+| `bullets` | 单栏要点；有图表时正文让出右半版面 | 定性叙述 |
+| `two_column` | 要点按数量对半分成左右两栏 | 并列的两组信息 |
+| `comparison_table` | python-pptx 原生可编辑表格 | 多对象 × 多指标（s2、s4） |
+| `chart_focus` | 图表占主体、要点压缩到下方 | 数据页（s2、s3） |
+| `custom` | 按 `elements` 列表流式排版 | 模型自由组合页面元素 |
+
+`layout` 和 `table` 都是**必需字段**（第 8 节那条 strict schema 约束使然），无表格时用空 `columns`/`rows` 表示。渲染器在缺少本版式所需数据时会回退到 `bullets`，避免出现空白页。
+
+`custom` 版式的元素类型有 `callout`（一句话结论 + 强调色条）、`kpi`（大号数字 + 标签）、`bullets`、`chart`、`table`。每个元素带 `cols`（3/4/6/8/12，占 12 列栅格的几列）和 `emphasis`（low/medium/high），布局引擎负责把栅格换算成英寸、按顺序流式排版并在放不下时换行——模型只声明“有什么、占多宽、多强调”，不写坐标。
+
+`presentation.theme` 是视觉主题开关，只改字体与字号、不改结构。内置 `classic`（26/18pt）与 `compact`（22/16pt）两套，各自定义 `font_family`、各级字号，以及表格用的 `accent` / `accent_text` 配色；主题缺失的键会回退到 `presentation` 顶层同名键，再回退到代码内置默认值。
+
+## S7 的模型评审与版面溢出
+
+S7 的检查分两层：确定性规则（`check_deck` / `check_ppt_bounds`）和可选的模型评审。`review.model_review: true` 时，每轮规则检查之后会把当前 `DeckSpec` 交给模型做一轮语义评审（`review_deck_with_model`），产出 `content_gap` / `contradiction` / `off_outline` / `clarity` / `structure` 类问题。模型问题一律 `severity=warning` 且带 `source: "model"`，不阻塞交付；规则问题带 `source: "rule"`。`review.max_model_issues` 限制每轮最多采纳条数。
+
+自定义布局的溢出之前是检查盲区：`check_ppt_bounds` 只看 shape 是否超出画布，不知道文本有没有溢出文本框、有没有压到来源行。现在 `simulate_custom_flow()` 用和渲染器同一套几何模拟排版，`check_deck` 对 `custom` 页做 `custom_layout_overflow`（error）检查；渲染端也在超出正文区时截断并返回 `overflow_pages`。
 
 ## Stage 对照
 

@@ -15,6 +15,39 @@ class ModelError(RuntimeError):
     """表示模型请求失败或返回空白、不完整结果。首次使用：S0。"""
 
 
+# 工具结果回传时，上一轮输出项的三种回放策略，用于适配不同服务商的会话实现。
+REPLAY_MODES = ("none", "function_call", "full")
+
+
+def _resolve_replay_mode(profile: dict[str, Any]) -> str:
+    """解析当前 profile 的回放策略，并兼容旧的 `replay_previous_output` 开关。首次使用：S2。"""
+
+    mode = profile.get("tool_call_replay")
+    if mode is None:
+        return "full" if profile.get("replay_previous_output") else "none"
+    return str(mode)
+
+
+def _replay_items(mode: str, items: list[dict[str, Any]]) -> list[dict[str, Any]]:
+    """按策略挑出要回放的输出项：完整回放，或只回放最小化的 function_call。首次使用：S2。"""
+
+    if mode == "full":
+        return list(items)
+    if mode == "function_call":
+        # 只保留必要字段：部分服务商会拒绝输出项里的 status/id 等附加键。
+        return [
+            {
+                "type": "function_call",
+                "call_id": str(item["call_id"]),
+                "name": str(item["name"]),
+                "arguments": str(item["arguments"]),
+            }
+            for item in items
+            if item.get("type") == "function_call"
+        ]
+    return []
+
+
 @dataclass(frozen=True)
 class ModelTurn:
     """保存一次 Responses API 回合的 ID、文本与工具调用。首次使用：S0。"""
@@ -63,9 +96,11 @@ class OpenAIModel:
         self.model_name = str(profile["name"])
         self.model_config = model_config
         self.call_count = 0
-        # 部分兼容服务（如 DeepSeek）不依据 previous_response_id 复原工具调用链，
-        # 必须在下一轮请求中回放上一轮输出项，否则报“找不到 call_id 对应的工具调用”。
-        self.replay_previous_output = bool(profile.get("replay_previous_output", False))
+        # 可选：让推理模型降低思考深度，缩短每个响应的时间；仅当前 profile 显式配置时才发送。
+        self.reasoning_effort = profile.get("reasoning_effort")
+        # 部分兼容服务不依据 previous_response_id 复原工具调用链，必须在下一轮请求中
+        # 回放上一轮的调用项，否则报“找不到 call_id 对应的工具调用”。
+        self.tool_call_replay = _resolve_replay_mode(profile)
         # 按 response id 暂存上一轮原始输出项，供下一轮工具结果请求回放。
         self._pending_output_items: dict[str, list[dict[str, Any]]] = {}
 
@@ -134,8 +169,9 @@ class OpenAIModel:
         在回传观察后必须给出文本总结。
         """
 
-        # 需要回放的 provider 先补上上一轮的 reasoning/function_call 项，再放工具输出。
-        replayed = self._pending_output_items.pop(previous_turn_id, [])
+        # 需要回放的 provider 先补上上一轮的调用项，再放工具输出。
+        stored = self._pending_output_items.pop(previous_turn_id, [])
+        replayed = _replay_items(self.tool_call_replay, stored)
         choice = {} if tool_choice is None else {"tool_choice": tool_choice}
         return self._create(
             previous_response_id=previous_turn_id,
@@ -166,6 +202,8 @@ class OpenAIModel:
         temperature = self.model_config.get("temperature")
         if temperature is not None:
             request["temperature"] = float(temperature)
+        if self.reasoning_effort:
+            request["reasoning"] = {"effort": str(self.reasoning_effort)}
         save_messages = self.config.section("recording").get("save_messages", True)
         self.recorder.record_model_request(
             call_id=call_id,
@@ -210,7 +248,7 @@ class OpenAIModel:
             )
         output_items = getattr(response, "output", [])
         # 只有包含函数调用的响应才需要留存回放，避免无用地累积上下文。
-        if self.replay_previous_output and any(
+        if self.tool_call_replay != "none" and any(
             getattr(item, "type", None) == "function_call" for item in output_items
         ):
             self._pending_output_items[response_id] = self._dump_output_items(output_items)

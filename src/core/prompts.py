@@ -46,6 +46,32 @@ def chart_rules() -> str:
 - chart 的数值必须来自已 read_page 核对的来源，values 与 categories 等长，不得为凑图编造数字。"""
 
 
+def layout_rules(config: AppConfig) -> str:
+    """生成页面版式与表格字段要求，按当前版式目录裁剪。首次使用：S3。"""
+
+    catalog = config.layout_catalog()
+    if catalog == ["bullets"]:
+        return (
+            "版式：本阶段 layout 固定填 \"bullets\"；"
+            "table 字段的 caption/columns/rows 全部留空（空字符串与空数组），表格只在 comparison_table 版式下使用。"
+        )
+    return f"""版式：每页必须从 {catalog} 中选一个 layout，并按内容性质选择：
+- bullets：要点列表，适合定性叙述。
+- two_column：要点分左右两栏，适合并列的两组信息。
+- comparison_table：多对象 × 多指标的比较，适合“最新竞争格局”“产品定位与优劣势”，必须填 table 字段。
+- chart_focus：以图表为主、要点为辅，适合数据页。
+- custom：用 elements 列表自由组合页面元素。
+table 字段：columns 是表头，rows 每行的单元格数必须与 columns 相同；没有表格时 caption/columns/rows 全部留空。
+表格里的数字同样必须来自已 read_page 核对的来源。
+
+当 layout 为 custom 时，elements 按顺序排列元素，每个元素必须有 type、cols、emphasis 三个字段：
+- type 取 callout（一句话结论）、kpi（大号数字+标签）、bullets（要点）、chart（图表）、table（表格）之一；
+- cols 取 3/4/6/8/12，表示占 12 列栅格中的几列；每行各元素 cols 之和不要超过 12；
+- emphasis 取 low/medium/high，表示视觉强调程度；
+- callout 填 text；kpi 填 value 与 label；bullets 填 items；chart 填 chart 数据；table 填 table 数据，其余字段留空。
+- 布局引擎负责实际坐标，模型只声明“有什么、占多宽、多强调”，不得编造来源数据。"""
+
+
 def deck_instructions(config: AppConfig, source_context: str = "") -> str:
     """生成约束五页 `DeckSpec` 写作和来源引用的指令。首次使用：S1。"""
 
@@ -53,6 +79,8 @@ def deck_instructions(config: AppConfig, source_context: str = "") -> str:
     return f"""你是严谨的商业研究演示文稿作者。输出必须符合给定 JSON Schema，恰好 {task['slide_count']} 页，页面 ID 依次为 s1–s{task['slide_count']}。每页不超过 6 个 bullet。只引用上下文中真实存在的 source_id；没有可靠数据时说明缺口，不补造数字。
 
 {chart_rules()}
+
+{layout_rules(config)}
 
 来源上下文：
 {source_context or '当前阶段未提供联网来源，因此不得声称已经完成实时检索。'}
@@ -97,6 +125,7 @@ def agent_instructions(
         "完成五页 DeckSpec 后必须调用 create_ppt；create_ppt 成功即表示本阶段交付完成。",
         f"最多选择 {config.section('task')['product_count_max']} 款产品。",
         chart_rules(),
+        layout_rules(config),
     ]
     if state is not None:
         context_parts.append("当前可信 State：\n" + json.dumps(state, ensure_ascii=False, indent=2))
@@ -147,4 +176,33 @@ def reflection_prompt(deck: dict[str, Any], issues: list[dict[str, Any]]) -> str
 
 ReviewIssue：
 {json.dumps(issues, ensure_ascii=False, indent=2)}
+"""
+
+
+def deck_review_prompt(config: AppConfig, deck: dict[str, Any]) -> str:
+    """要求模型评审 DeckSpec，只提结构与逻辑问题，不补造事实。首次使用：S7。"""
+
+    outline = "\n".join(
+        f"{index}. {title}"
+        for index, title in enumerate(config.section("task")["slide_outline"], start=1)
+    )
+    return f"""你是严格的演示文稿评审者。只基于下面的 DeckSpec 提出需要修改的问题，不要补造事实或数字。
+
+只关注这些问题类型：
+- off_outline：页面没有回答大纲里对应一项的要求；
+- contradiction：页面之间或页面内部自相矛盾；
+- content_gap：本该有论证或对比的地方缺失；
+- clarity：表述含糊、层级混乱、要点没有重点；
+- structure：页面结构不适合当前内容。
+
+约束：
+- 证据写进 evidence（引用 DeckSpec 里的原文片段），建议写进 suggestion；
+- 不得建议新增数字或“补找数据”；只能建议重组、精简、改写；
+- 没把握就不写，宁缺毋滥，最多 5 条。
+
+要求的大纲：
+{outline}
+
+当前 DeckSpec：
+{json.dumps(deck, ensure_ascii=False, indent=2)}
 """

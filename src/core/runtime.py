@@ -274,7 +274,14 @@ def build_tool_registry(config: AppConfig) -> ToolRegistry:
         ToolDefinition(
             "create_ppt",
             "根据完整 DeckSpec 创建最终五页 PPTX。",
-            _object_schema({"deck": deck_schema(int(config.section("task")["slide_count"]))}, ["deck"]),
+            _object_schema(
+                {
+                    "deck": deck_schema(
+                        int(config.section("task")["slide_count"]), config.layout_catalog()
+                    )
+                },
+                ["deck"],
+            ),
             _create_ppt_handler,
         )
     )
@@ -294,7 +301,7 @@ def build_tool_registry(config: AppConfig) -> ToolRegistry:
         ToolDefinition(
             "patch_deck",
             "针对明确的评审问题替换一个或多个页面。",
-            deck_patch_schema(),
+            deck_patch_schema(config.layout_catalog()),
             _patch_deck_handler,
         )
     )

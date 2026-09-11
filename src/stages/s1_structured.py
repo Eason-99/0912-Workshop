@@ -28,8 +28,8 @@ def run(
         task_prompt(config),
         deck_instructions(config),
         "deck_spec",
-        deck_schema(slide_count),
+        deck_schema(slide_count, config.layout_catalog()),
     )
-    validate_deck(deck, slide_count)
+    validate_deck(deck, slide_count, config.layout_catalog())
     path = context.recorder.write_json("deck.json", deck)
     return {"deck_path": str(path), "pptx_created": "false"}

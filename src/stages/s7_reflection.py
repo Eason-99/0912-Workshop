@@ -12,10 +12,14 @@ from core.prompts import reflection_prompt, tool_demo_instructions
 from core.runtime import ToolRegistry, execute_call, run_tool_round
 from stages.common import create_initial_plan, make_task_state, run_research_agent
 from tools.presentation import PresentationToolError, render_ppt
-from tools.review import check_deck
+from tools.review import check_deck, review_deck_with_model
 
 
-def _review_current_version(config: AppConfig, context: ExecutionContext) -> list[dict[str, str]]:
+def _review_current_version(
+    config: AppConfig,
+    model: OpenAIModel,
+    context: ExecutionContext,
+) -> list[dict[str, str]]:
     """尽可能渲染当前 PPT，执行规则检查并保存报告。首次使用：S7。"""
 
     if context.deck is None or context.deck_version < 1:
@@ -38,6 +42,15 @@ def _review_current_version(config: AppConfig, context: ExecutionContext) -> lis
         if source.get("status") == "page_read"
     }
     issues = check_deck(context.deck, verified_source_ids, config, pptx_path)
+    for issue in issues:
+        issue["source"] = "rule"
+    if config.section("review").get("model_review", False):
+        issues.extend(review_deck_with_model(model, context.deck, config))
+    # 规则 error 优先，其次规则 warning，最后模型建议；并统一重新编号。
+    order = {"error": 0, "warning": 1}
+    issues.sort(key=lambda item: (item.get("source") != "rule", order.get(item.get("severity"), 2)))
+    for index, issue in enumerate(issues, start=1):
+        issue["id"] = f"issue_{index}"
     context.recorder.write_json(f"review_v{version}.json", issues)
     context.recorder.record("deck_reviewed", version=version, issue_count=len(issues))
     return issues
@@ -78,7 +91,7 @@ def run(
         return {"agent": outcome.to_dict(), "reviews": [], "message": "Agent 未交付 PPT，无法进入 Reflection"}
 
     reviews: list[dict[str, Any]] = []
-    issues = _review_current_version(config, context)
+    issues = _review_current_version(config, model, context)
     reviews.append({"version": context.deck_version, "issues": issues})
     max_rounds = int(config.section("limits")["max_review_rounds"])
     for round_number in range(1, max_rounds + 1):
@@ -93,6 +106,6 @@ def run(
             ["patch_deck"],
         )
         _create_revised_ppt(registry, context, round_number)
-        issues = _review_current_version(config, context)
+        issues = _review_current_version(config, model, context)
         reviews.append({"version": context.deck_version, "issues": issues})
     return {"agent": outcome.to_dict(), "reviews": reviews, "final_version": context.deck_version}

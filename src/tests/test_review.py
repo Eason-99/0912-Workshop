@@ -5,7 +5,7 @@ import unittest
 
 from core.config import load_config
 from tests.test_contracts import sample_deck
-from tools.review import check_deck
+from tools.review import check_deck, review_deck_with_model
 
 
 class ReviewTests(unittest.TestCase):
@@ -59,6 +59,47 @@ class ReviewTests(unittest.TestCase):
         }
         self.assertNotIn("chart_missing", issue_types)
         self.assertNotIn("invalid_chart", issue_types)
+
+    def test_custom_layout_overflow_is_flagged(self) -> None:
+        """确认自定义布局内容超出正文区时会被规则发现。首次覆盖：S7。"""
+
+        config = load_config(Path(__file__).resolve().parents[1] / "config.yaml")
+        deck = sample_deck()
+        deck["slides"][0]["layout"] = "custom"
+        deck["slides"][0]["elements"] = [
+            {
+                "type": "callout",
+                "cols": 12,
+                "emphasis": "high",
+                "text": f"结论 {i}",
+                "value": "",
+                "label": "",
+                "items": [],
+                "chart": {"type": "none", "title": "", "unit": "", "categories": [], "series": []},
+                "table": {"caption": "", "columns": [], "rows": []},
+            }
+            for i in range(12)
+        ]
+        issue_types = {item["type"] for item in check_deck(deck, set(), config)}
+        self.assertIn("custom_layout_overflow", issue_types)
+
+    def test_model_review_marks_issues_as_model_source(self) -> None:
+        """确认模型评审产出会被标成 model 来源，并过滤非法页面。首次覆盖：S7。"""
+
+        class FakeModel:
+            def generate_structured(self, prompt, instructions, name, schema):
+                return {
+                    "issues": [
+                        {"slide_id": "s2", "type": "clarity", "severity": "warning", "evidence": "x", "suggestion": "y"},
+                        {"slide_id": "s9", "type": "clarity", "severity": "warning", "evidence": "x", "suggestion": "y"},
+                    ]
+                }
+
+        config = load_config(Path(__file__).resolve().parents[1] / "config.yaml")
+        issues = review_deck_with_model(FakeModel(), sample_deck(), config)
+        self.assertEqual(len(issues), 1)
+        self.assertEqual(issues[0]["source"], "model")
+        self.assertEqual(issues[0]["slide_id"], "s2")
 
 
 if __name__ == "__main__":

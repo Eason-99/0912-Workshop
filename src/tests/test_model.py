@@ -105,6 +105,8 @@ class ModelTests(unittest.TestCase):
         responses: list[object],
         run_dir: Path,
         replay_previous_output: bool = False,
+        tool_call_replay: str | None = None,
+        reasoning_effort: str | None = None,
     ) -> tuple[OpenAIModel, FakeResponses]:
         """绕过真实客户端初始化并注入可观察的假 Responses 客户端。首次覆盖：S1。"""
 
@@ -116,17 +118,25 @@ class ModelTests(unittest.TestCase):
         model.config = config
         model.recorder = recorder
         model.profile_name = "third_party"
-        model.profile = {
+        profile: dict[str, object] = {
             "name": "test-model",
             "api_mode": "responses",
             "supports_tool_calling": True,
             "replay_previous_output": replay_previous_output,
         }
+        if tool_call_replay is not None:
+            profile["tool_call_replay"] = tool_call_replay
+        if reasoning_effort is not None:
+            profile["reasoning_effort"] = reasoning_effort
+        model.profile = profile
         model.model_name = "test-model"
         model.model_config = config.section("model")
         model.call_count = 0
-        model.replay_previous_output = replay_previous_output
+        model.tool_call_replay = tool_call_replay or (
+            "full" if replay_previous_output else "none"
+        )
         model._pending_output_items = {}
+        model.reasoning_effort = reasoning_effort
         return model, fake_api
 
     def test_call_log_preserves_final_request_and_raw_output(self) -> None:
@@ -270,6 +280,71 @@ class ModelTests(unittest.TestCase):
             self.assertEqual(sent[2]["call_id"], "call_1")
         # 回放数据在消费后即释放，避免同一响应被重复回放。
         self.assertEqual(model._pending_output_items, {})
+
+    def test_function_call_replay_mode_sends_minimal_item(self) -> None:
+        """确认 function_call 模式只回放最小字段，避免服务商拒绝附加键。首次覆盖：S2。"""
+
+        reasoning = fake_output_item(
+            {"type": "reasoning", "id": "rs_1", "status": "completed", "content": []}
+        )
+        call_item = fake_output_item(
+            {
+                "type": "function_call",
+                "id": "fc_1",
+                "status": "completed",
+                "call_id": "call_1",
+                "name": "search_web",
+                "arguments": '{"query":"AI","date_range":""}',
+            }
+        )
+        with tempfile.TemporaryDirectory() as temporary:
+            model, fake_api = self._model(
+                [fake_response("resp_1", "", [reasoning, call_item]), fake_response("resp_2", "完成")],
+                Path(temporary) / "run",
+                tool_call_replay="function_call",
+            )
+            first_turn = model.start_tool_turn("搜索", "使用工具", [])
+            output = SimpleNamespace(
+                call_id="call_1", to_dict=lambda: {"success": True, "data": {}}
+            )
+            model.continue_tool_turn(first_turn.id, [tool_output_item(output)], "总结", [])
+            sent = fake_api.requests[1]["input"]
+        self.assertEqual([item["type"] for item in sent], ["function_call", "function_call_output"])
+        # 不能带 status / id 这类服务商不认识的键。
+        self.assertEqual(set(sent[0]), {"type", "call_id", "name", "arguments"})
+
+    def test_none_replay_mode_sends_only_tool_output(self) -> None:
+        """确认 none 模式不回放任何上一轮内容，适用于服务端自己维护会话的端点。首次覆盖：S2。"""
+
+        call_item = fake_output_item(
+            {"type": "function_call", "call_id": "call_1", "name": "search_web", "arguments": "{}"}
+        )
+        with tempfile.TemporaryDirectory() as temporary:
+            model, fake_api = self._model(
+                [fake_response("resp_1", "", [call_item]), fake_response("resp_2", "完成")],
+                Path(temporary) / "run",
+                tool_call_replay="none",
+            )
+            first_turn = model.start_tool_turn("搜索", "使用工具", [])
+            output = SimpleNamespace(
+                call_id="call_1", to_dict=lambda: {"success": True, "data": {}}
+            )
+            model.continue_tool_turn(first_turn.id, [tool_output_item(output)], "总结", [])
+            sent = fake_api.requests[1]["input"]
+        self.assertEqual([item["type"] for item in sent], ["function_call_output"])
+
+    def test_reasoning_effort_is_passed_when_configured(self) -> None:
+        """确认 profile 配置了 reasoning_effort 时，请求会带上 reasoning 参数。首次覆盖：S4。"""
+
+        with tempfile.TemporaryDirectory() as temporary:
+            model, fake_api = self._model(
+                [fake_response("resp_1", "ok")],
+                Path(temporary) / "run",
+                reasoning_effort="low",
+            )
+            model.generate_text("提示", "指令")
+            request = fake_api.requests[0]
+        self.assertEqual(request["reasoning"], {"effort": "low"})
 
 
 if __name__ == "__main__":

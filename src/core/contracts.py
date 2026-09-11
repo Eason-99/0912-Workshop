@@ -10,6 +10,14 @@ class ContractError(ValueError):
     """表示模型输出或工具参数未满足数据契约。首次使用：S1。"""
 
 
+# 契约层拥有的版式词表；渲染实现在 tools/presentation.py，由测试保证两者一致。
+KNOWN_LAYOUTS = ("bullets", "two_column", "comparison_table", "chart_focus", "custom")
+DEFAULT_LAYOUT = "bullets"
+ELEMENT_TYPES = ("callout", "kpi", "bullets", "chart", "table")
+ELEMENT_COLS = (3, 4, 6, 8, 12)
+ELEMENT_EMPHASIS = ("low", "medium", "high")
+
+
 @dataclass(frozen=True)
 class ToolCall:
     """表示模型请求执行的一次外部动作。首次使用：S2。"""
@@ -115,20 +123,86 @@ def chart_schema() -> dict[str, Any]:
     }
 
 
-def deck_schema(slide_count: int = 5) -> dict[str, Any]:
+def table_schema() -> dict[str, Any]:
+    """生成对比表格数据的严格 Schema；`columns` 为空表示本页没有表格。首次使用：S3。"""
+
+    return {
+        "type": "object",
+        "properties": {
+            "caption": {"type": "string"},
+            "columns": _string_array_schema(),
+            "rows": {"type": "array", "items": _string_array_schema()},
+        },
+        "required": ["caption", "columns", "rows"],
+        "additionalProperties": False,
+    }
+
+
+def element_schema() -> dict[str, Any]:
+    """生成页面元素的严格 Schema；`type` 是判别字段，其余字段按类型选择性使用。首次使用：S3。"""
+
+    return {
+        "type": "object",
+        "properties": {
+            "type": {"type": "string", "enum": list(ELEMENT_TYPES)},
+            "cols": {"type": "integer", "enum": list(ELEMENT_COLS)},
+            "emphasis": {"type": "string", "enum": list(ELEMENT_EMPHASIS)},
+            "text": {"type": "string"},
+            "value": {"type": "string"},
+            "label": {"type": "string"},
+            "items": _string_array_schema(),
+            "chart": chart_schema(),
+            "table": table_schema(),
+        },
+        "required": [
+            "type",
+            "cols",
+            "emphasis",
+            "text",
+            "value",
+            "label",
+            "items",
+            "chart",
+            "table",
+        ],
+        "additionalProperties": False,
+    }
+
+
+def elements_schema() -> dict[str, Any]:
+    """生成页面元素列表的 Schema；空数组表示本页不使用自定义布局。首次使用：S3。"""
+
+    return {"type": "array", "items": element_schema()}
+
+
+def deck_schema(slide_count: int = 5, layouts: list[str] | None = None) -> dict[str, Any]:
     """生成模型输出和 PPT 工具共用的严格 `DeckSpec` Schema。首次使用：S1。"""
 
+    layout_values = list(layouts) if layouts else [DEFAULT_LAYOUT]
     slide = {
         "type": "object",
         "properties": {
             "id": {"type": "string"},
             "title": {"type": "string"},
+            "layout": {"type": "string", "enum": layout_values},
             "bullets": _string_array_schema(),
+            "table": table_schema(),
+            "elements": elements_schema(),
             "source_ids": _string_array_schema(),
             "speaker_notes": {"type": "string"},
             "chart": chart_schema(),
         },
-        "required": ["id", "title", "bullets", "source_ids", "speaker_notes", "chart"],
+        "required": [
+            "id",
+            "title",
+            "layout",
+            "bullets",
+            "table",
+            "elements",
+            "source_ids",
+            "speaker_notes",
+            "chart",
+        ],
         "additionalProperties": False,
     }
     return {
@@ -228,15 +302,19 @@ def plan_schema() -> dict[str, Any]:
     }
 
 
-def deck_patch_schema() -> dict[str, Any]:
+def deck_patch_schema(layouts: list[str] | None = None) -> dict[str, Any]:
     """生成评审修订时使用的整页替换 Schema。首次使用：S7。"""
 
+    layout_values = list(layouts) if layouts else [DEFAULT_LAYOUT]
     patch = {
         "type": "object",
         "properties": {
             "slide_id": {"type": "string"},
             "title": {"type": "string"},
+            "layout": {"type": "string", "enum": layout_values},
             "bullets": _string_array_schema(),
+            "table": table_schema(),
+            "elements": elements_schema(),
             "source_ids": _string_array_schema(),
             "speaker_notes": {"type": "string"},
             "chart": chart_schema(),
@@ -246,7 +324,10 @@ def deck_patch_schema() -> dict[str, Any]:
         "required": [
             "slide_id",
             "title",
+            "layout",
             "bullets",
+            "table",
+            "elements",
             "source_ids",
             "speaker_notes",
             "chart",
@@ -263,7 +344,37 @@ def deck_patch_schema() -> dict[str, Any]:
     }
 
 
-def validate_deck(deck: dict[str, Any], slide_count: int = 5) -> dict[str, Any]:
+def review_issue_schema(max_issues: int = 5) -> dict[str, Any]:
+    """生成模型评审产出的 Issue 列表 Schema。首次使用：S7。"""
+
+    issue = {
+        "type": "object",
+        "properties": {
+            "slide_id": {"type": "string"},
+            "type": {
+                "type": "string",
+                "enum": ["content_gap", "contradiction", "off_outline", "clarity", "structure"],
+            },
+            "severity": {"type": "string", "enum": ["warning"]},
+            "evidence": {"type": "string"},
+            "suggestion": {"type": "string"},
+        },
+        "required": ["slide_id", "type", "severity", "evidence", "suggestion"],
+        "additionalProperties": False,
+    }
+    return {
+        "type": "object",
+        "properties": {"issues": {"type": "array", "items": issue, "maxItems": max_issues}},
+        "required": ["issues"],
+        "additionalProperties": False,
+    }
+
+
+def validate_deck(
+    deck: dict[str, Any],
+    slide_count: int = 5,
+    layouts: list[str] | None = None,
+) -> dict[str, Any]:
     """检查页数、页面 ID 和字段类型等稳定生成所需约束。首次使用：S1。"""
 
     if not isinstance(deck, dict) or not isinstance(deck.get("title"), str):
@@ -273,7 +384,18 @@ def validate_deck(deck: dict[str, Any], slide_count: int = 5) -> dict[str, Any]:
         raise ContractError(f"DeckSpec.slides 必须恰好包含 {slide_count} 页")
     expected_ids = [f"s{index}" for index in range(1, slide_count + 1)]
     actual_ids: list[str] = []
-    required = {"id", "title", "bullets", "source_ids", "speaker_notes", "chart"}
+    allowed_layouts = set(layouts) if layouts else set(KNOWN_LAYOUTS)
+    required = {
+        "id",
+        "title",
+        "layout",
+        "bullets",
+        "table",
+        "elements",
+        "source_ids",
+        "speaker_notes",
+        "chart",
+    }
     for index, slide in enumerate(slides, start=1):
         if not isinstance(slide, dict) or not required.issubset(slide):
             raise ContractError(f"第 {index} 页缺少必需字段：{sorted(required - set(slide or {}))}")
@@ -282,16 +404,88 @@ def validate_deck(deck: dict[str, Any], slide_count: int = 5) -> dict[str, Any]:
             raise ContractError(f"第 {index} 页包含未知字段：{unknown}")
         if not all(isinstance(slide[key], str) for key in ("id", "title", "speaker_notes")):
             raise ContractError(f"第 {index} 页 id/title/speaker_notes 必须是字符串")
+        if slide["layout"] not in allowed_layouts:
+            raise ContractError(
+                f"第 {index} 页 layout 必须是 {sorted(allowed_layouts)} 之一，当前为 `{slide['layout']}`"
+            )
         if not all(
             isinstance(slide[key], list) and all(isinstance(item, str) for item in slide[key])
             for key in ("bullets", "source_ids")
         ):
             raise ContractError(f"第 {index} 页 bullets/source_ids 必须是字符串数组")
         _validate_chart(slide["chart"], index)
+        _validate_table(slide["table"], index)
+        _validate_elements(slide["elements"], index)
         actual_ids.append(slide["id"])
     if actual_ids != expected_ids:
         raise ContractError(f"页面 ID 必须依次为 {expected_ids}")
     return deck
+
+
+def _validate_elements(elements: Any, page_index: int) -> None:
+    """校验页面元素列表的结构，以及每种元素所需字段是否已填充。首次使用：S3。"""
+
+    if not isinstance(elements, list):
+        raise ContractError(f"第 {page_index} 页 elements 必须是数组")
+    for element_index, element in enumerate(elements):
+        if not isinstance(element, dict) or set(element) != {
+            "type",
+            "cols",
+            "emphasis",
+            "text",
+            "value",
+            "label",
+            "items",
+            "chart",
+            "table",
+        }:
+            raise ContractError(f"第 {page_index} 页第 {element_index + 1} 个元素字段不完整")
+        element_type = element["type"]
+        if element_type not in ELEMENT_TYPES:
+            raise ContractError(f"第 {page_index} 页元素 type 必须是 {ELEMENT_TYPES} 之一")
+        if element["cols"] not in ELEMENT_COLS:
+            raise ContractError(f"第 {page_index} 页元素 cols 必须是 {ELEMENT_COLS} 之一")
+        if element["emphasis"] not in ELEMENT_EMPHASIS:
+            raise ContractError(f"第 {page_index} 页元素 emphasis 必须是 {ELEMENT_EMPHASIS} 之一")
+        if element_type == "callout" and not element["text"].strip():
+            raise ContractError(f"第 {page_index} 页 callout 元素缺少 text")
+        if element_type == "kpi" and not element["value"].strip():
+            raise ContractError(f"第 {page_index} 页 kpi 元素缺少 value")
+        if element_type == "bullets" and not element["items"]:
+            raise ContractError(f"第 {page_index} 页 bullets 元素缺少 items")
+        if element_type == "chart" and (
+            element["chart"].get("type") == "none"
+            or not element["chart"].get("categories")
+            or not element["chart"].get("series")
+        ):
+            raise ContractError(f"第 {page_index} 页 chart 元素缺少有效图表数据")
+        if element_type == "table" and (
+            not element["table"].get("columns") or not element["table"].get("rows")
+        ):
+            raise ContractError(f"第 {page_index} 页 table 元素缺少有效表格数据")
+
+
+def _validate_table(table: Any, page_index: int) -> None:
+    """校验对比表格字段的类型与行列一致性。首次使用：S3。"""
+
+    fields = {"caption", "columns", "rows"}
+    if not isinstance(table, dict) or set(table) != fields:
+        raise ContractError(f"第 {page_index} 页 table 字段必须恰好为 {sorted(fields)}")
+    if not isinstance(table["caption"], str):
+        raise ContractError(f"第 {page_index} 页 table.caption 必须是字符串")
+    columns = table["columns"]
+    if not isinstance(columns, list) or not all(isinstance(item, str) for item in columns):
+        raise ContractError(f"第 {page_index} 页 table.columns 必须是字符串数组")
+    rows = table["rows"]
+    if not isinstance(rows, list) or not all(
+        isinstance(row, list) and all(isinstance(cell, str) for cell in row) for row in rows
+    ):
+        raise ContractError(f"第 {page_index} 页 table.rows 必须是字符串二维数组")
+    if not columns and rows:
+        raise ContractError(f"第 {page_index} 页 table 有数据行却没有 columns")
+    for row in rows:
+        if len(row) != len(columns):
+            raise ContractError(f"第 {page_index} 页 table 每行单元格数必须与 columns 一致")
 
 
 def _validate_chart(chart: Any, page_index: int) -> None:
@@ -364,7 +558,10 @@ def apply_deck_patches(deck: dict[str, Any], patch_data: dict[str, Any]) -> dict
         slides[slide_id] = {
             "id": slide_id,
             "title": patch["title"],
+            "layout": patch["layout"],
             "bullets": patch["bullets"],
+            "table": patch["table"],
+            "elements": patch["elements"],
             "source_ids": patch["source_ids"],
             "speaker_notes": patch["speaker_notes"],
             "chart": patch["chart"],

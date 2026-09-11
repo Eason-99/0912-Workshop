@@ -205,9 +205,9 @@ def run_fixed_workflow(
         task_prompt(config),
         deck_instructions(config, source_context),
         "deck_spec",
-        deck_schema(int(task["slide_count"])),
+        deck_schema(int(task["slide_count"]), config.layout_catalog()),
     )
-    validate_deck(deck, int(task["slide_count"]))
+    validate_deck(deck, int(task["slide_count"]), config.layout_catalog())
     delivery = _host_call("create_ppt", {"deck": deck}, registry, context, sequence)
     return {"products": products, "delivery": delivery, "open_questions": bundle["open_questions"]}
 

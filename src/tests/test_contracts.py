@@ -7,16 +7,20 @@ from stages.common import build_comparability_report
 
 
 def sample_deck() -> dict:
-    """构造合法的五页最小 Deck 测试夹具（含空图表）。首次覆盖：S1。"""
+    """构造合法的五页最小 Deck 测试夹具（含空图表与空表格）。首次覆盖：S1。"""
 
     no_chart = {"type": "none", "title": "", "unit": "", "categories": [], "series": []}
+    no_table = {"caption": "", "columns": [], "rows": []}
     return {
         "title": "测试 Deck",
         "slides": [
             {
                 "id": f"s{index}",
                 "title": f"第 {index} 页",
+                "layout": "bullets",
                 "bullets": ["测试内容"],
+                "table": dict(no_table),
+                "elements": [],
                 "source_ids": [],
                 "speaker_notes": "",
                 "chart": dict(no_chart),
@@ -79,7 +83,10 @@ class ContractTests(unittest.TestCase):
                     {
                         "slide_id": "s2",
                         "title": "修订页",
+                        "layout": "bullets",
                         "bullets": ["样本内 MAU 份额"],
+                        "table": {"caption": "", "columns": [], "rows": []},
+                        "elements": [],
                         "source_ids": [],
                         "speaker_notes": "修订",
                         "chart": {"type": "none", "title": "", "unit": "", "categories": [], "series": []},
@@ -118,6 +125,52 @@ class ContractTests(unittest.TestCase):
             "series": [{"name": "样本内 MAU 份额", "values": [49.9, 21.9]}],
         }
         self.assertEqual(len(validate_deck(deck)["slides"]), 5)
+
+    def test_validate_deck_restricts_layout_to_catalog(self) -> None:
+        """确认版式超出当前模式目录时会被拒绝。首次覆盖：S3。"""
+
+        deck = sample_deck()
+        deck["slides"][0]["layout"] = "comparison_table"
+        with self.assertRaises(ContractError):
+            validate_deck(deck, layouts=["bullets"])
+        # 目录放开后同一份 Deck 应通过。
+        self.assertEqual(
+            len(validate_deck(deck, layouts=["bullets", "comparison_table"])["slides"]), 5
+        )
+
+    def test_validate_deck_rejects_inconsistent_table(self) -> None:
+        """确认表格行列数不一致时会被拒绝。首次覆盖：S3。"""
+
+        deck = sample_deck()
+        deck["slides"][1]["layout"] = "comparison_table"
+        deck["slides"][1]["table"] = {
+            "caption": "样本内 MAU 份额",
+            "columns": ["产品", "份额"],
+            "rows": [["豆包", "49.0%", "多余"]],
+        }
+        with self.assertRaises(ContractError):
+            validate_deck(deck)
+
+    def test_validate_deck_rejects_incomplete_element(self) -> None:
+        """确认 callout 元素缺少 text 时会被拒绝。首次覆盖：S3。"""
+
+        deck = sample_deck()
+        deck["slides"][0]["layout"] = "custom"
+        deck["slides"][0]["elements"] = [
+            {
+                "type": "callout",
+                "cols": 12,
+                "emphasis": "high",
+                "text": "",
+                "value": "",
+                "label": "",
+                "items": [],
+                "chart": {"type": "none", "title": "", "unit": "", "categories": [], "series": []},
+                "table": {"caption": "", "columns": [], "rows": []},
+            }
+        ]
+        with self.assertRaises(ContractError):
+            validate_deck(deck)
 
 
 if __name__ == "__main__":

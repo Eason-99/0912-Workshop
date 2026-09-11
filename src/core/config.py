@@ -9,6 +9,8 @@ from pathlib import Path
 from typing import Any
 from urllib.parse import urlparse
 
+from core.contracts import DEFAULT_LAYOUT, KNOWN_LAYOUTS
+
 
 VALID_STAGES = {
     "s0_api",
@@ -76,6 +78,16 @@ class AppConfig:
         profile_name = str(model["active_profile"])
         profiles = model["profiles"]
         return profile_name, profiles[profile_name]
+
+    def layout_catalog(self) -> list[str]:
+        """返回当前允许的页面版式目录；fixed 模式固定只用 bullets。首次使用：S3。"""
+
+        presentation = self.section("presentation")
+        if str(presentation.get("layout_mode", "fixed")).strip() != "adaptive":
+            return [DEFAULT_LAYOUT]
+        configured = presentation.get("layouts")
+        names = [str(item).strip() for item in configured] if isinstance(configured, list) else []
+        return [name for name in names if name] or [DEFAULT_LAYOUT]
 
     def model_connection(self, profile_name: str | None = None) -> tuple[str, str]:
         """从 `.env` 读取指定或当前模型的 API Key 与 Base URL。首次使用：S0。"""
@@ -181,6 +193,16 @@ def _validate_config(data: dict[str, Any], src_dir: Path) -> None:
             raise ConfigError(
                 f"`model.profiles.{profile_name}.replay_previous_output` 必须是 boolean"
             )
+        replay_mode = profile.get("tool_call_replay")
+        if replay_mode is not None and replay_mode not in ("none", "function_call", "full"):
+            raise ConfigError(
+                f"`model.profiles.{profile_name}.tool_call_replay` 必须是 none/function_call/full"
+            )
+        reasoning_effort = profile.get("reasoning_effort")
+        if reasoning_effort is not None and reasoning_effort not in ("low", "medium", "high"):
+            raise ConfigError(
+                f"`model.profiles.{profile_name}.reasoning_effort` 必须是 low/medium/high"
+            )
     _require_positive(model, "max_retries", "model")
     if not isinstance(model.get("use_streaming"), bool):
         raise ConfigError("`model.use_streaming` 必须是 boolean")
@@ -202,6 +224,23 @@ def _validate_config(data: dict[str, Any], src_dir: Path) -> None:
         raise ConfigError("`presentation.output_filename` 必须以 .pptx 结尾")
     if Path(output_filename).name != output_filename:
         raise ConfigError("`presentation.output_filename` 只能是文件名，不能包含目录")
+    layout_mode = str(presentation.get("layout_mode", "fixed")).strip()
+    if layout_mode not in {"fixed", "adaptive"}:
+        raise ConfigError("`presentation.layout_mode` 必须是 fixed 或 adaptive")
+    if layout_mode == "adaptive":
+        layouts = presentation.get("layouts")
+        if not isinstance(layouts, list) or not layouts:
+            raise ConfigError("`presentation.layout_mode: adaptive` 时 `presentation.layouts` 必须是非空列表")
+        unknown_layouts = [name for name in layouts if name not in KNOWN_LAYOUTS]
+        if unknown_layouts:
+            raise ConfigError(
+                f"`presentation.layouts` 含未知版式 {unknown_layouts}；可用值：{list(KNOWN_LAYOUTS)}"
+            )
+    theme_name = presentation.get("theme")
+    if theme_name is not None:
+        themes = presentation.get("themes") or {}
+        if not isinstance(themes, dict) or str(theme_name) not in themes:
+            raise ConfigError(f"`presentation.theme` 必须对应 `presentation.themes` 中的一个条目")
 
     limits = _require_mapping(data, "limits")
     for field in (

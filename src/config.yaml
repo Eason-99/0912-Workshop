@@ -3,7 +3,7 @@
 
 # 运行入口与产物目录设置；首次使用：S0。
 run:
-  stage: s3_workflow  # 本次执行的阶段，可选 s0_api、s1_structured、s2_tools、s3_workflow、s4_agent、s5_state、s6_planning、s7_reflection。
+  stage: s7_reflection  # 本次执行的阶段，可选 s0_api、s1_structured、s2_tools、s3_workflow、s4_agent、s5_state、s6_planning、s7_reflection。
   output_dir: runs  # 运行产物根目录；相对于 src 解析，且不允许指向 src 外部。
   run_name: china_ai_landscape  # 运行名称；会与 UTC 时间组合成唯一 run_id，避免覆盖历史结果。
 
@@ -15,19 +15,22 @@ model:
   # 两种连接均默认使用 OpenAI-compatible Responses API；这里只保存模型名和环境变量名。
   profiles:
     deepseek:  # DeepSeek 官方服务或使用同一凭据命名的兼容代理。
-      name: deepseek-v4-flash  # 传给 DeepSeek API 的模型名称；推理模型可按需改为 deepseek-reasoner。
+      name: deepseek-v4-flash  # 传给 DeepSeek API 的模型名称
       api_key_env: DEEPSEEK_API_KEY  # 从 core/.env 读取此变量作为当前 API Key。
       base_url_env: DEEPSEEK_BASE_URL  # 从 core/.env 读取此变量作为当前 Base URL。
       api_mode: responses  # 使用 /responses 端点；当前两个 profile 都固定为该协议。
       supports_tool_calling: true  # 端点是否支持 Responses API 函数工具调用；S2–S7 必须为 true。
-      replay_previous_output: true  # DeepSeek 不按 previous_response_id 复原工具调用链，需回放上一轮输出项（含 reasoning）。
+      tool_call_replay: full  # 工具结果回传时回放上一轮完整输出项。DeepSeek 需要含 reasoning 的完整回放，否则报 400。
+      reasoning_effort: high  # 降低思考深度，缩短每个响应的时间；实测默认 thinking 可达 8K+ token，单次 2–3 分钟。
     third_party:  # 任意 OpenAI-compatible 第三方服务。
       name: gpt-5.6-sol  # 第三方服务实际提供的模型名称，与本机 Codex 当前模型保持一致。
       api_key_env: THIRD_PARTY_API_KEY  # 从 core/.env 读取此变量作为第三方 API Key。
       base_url_env: THIRD_PARTY_BASE_URL  # 从 core/.env 读取此变量作为第三方 Base URL。
       api_mode: responses  # 使用 /responses 端点；当前两个 profile 都固定为该协议。
       supports_tool_calling: true  # 第三方若不支持函数工具调用，只有 S0–S1 可以运行。
-      replay_previous_output: false  # 标准 OpenAI-compatible 端点由服务端按 previous_response_id 维护工具链，无需回放。
+      # 该端点同样不按 previous_response_id 复原工具链，但只接受最小化的 function_call 项：
+      # 回放完整输出项会报 `Unknown parameter: 'input[0].status'`。标准端点可设为 none。
+      tool_call_replay: function_call
   temperature: null  # 可选采样温度；null 表示不向 API 发送该参数，使用模型默认行为。
   max_output_tokens: 32000  # 单次 Responses API 响应允许生成的最大 Token 数；适用于 S0–S7。推理模型的思考 Token 也计入上限，S3 抽取 Evidence 时实测需要约 17K，过小会被截断。
   timeout_seconds: 300  # 单次模型 API 读取超时秒数；复杂五页任务可能明显慢于连通性测试。
@@ -68,7 +71,44 @@ research:
 presentation:
   template: null  # 可选空白 PPTX 模板路径，相对于 src；null 表示使用 python-pptx 默认空白演示文稿。
   output_filename: china_ai_landscape.pptx  # 每次运行内指向最新版 PPT 的稳定文件名，只能填写文件名。
-  font_family: Noto Sans CJK SC  # PPT 标题、正文、来源和页码使用的中文字体。
+  # 版式开关：fixed 固定只用 bullets（与历史输出完全一致）；adaptive 允许模型在 layouts 里自选版式。
+  # layout_mode: fixed
+  layout_mode: adaptive
+  # adaptive 模式下开放给模型的版式目录；fixed 模式忽略此项。
+  layouts:
+    - bullets  # 要点列表：定性叙述。
+    - two_column  # 左右两栏：并列对比两组要点。
+    - comparison_table  # 对比表格：多对象 × 多指标，必须填 table 字段。
+    - chart_focus  # 图表为主、要点为辅：数据页。
+    - custom  # 自定义布局：用 elements 列表自由组合 callout/kpi/bullets/chart/table。
+  # 视觉主题：只改变字体与字号，不改变版面结构。
+  theme: classic
+  themes:
+    classic:  # 默认主题：字号偏大、适合投屏。
+      font_family: Noto Sans CJK SC
+      title_size: 26
+      body_size: 18
+      chart_body_size: 14
+      table_size: 12
+      small_size: 9
+      title_color: "1F1F1F"
+      text_color: "333333"
+      muted_color: "7F7F7F"
+      accent: "1F4E79"
+      accent_text: "FFFFFF"
+    compact:  # 紧凑主题：内容密度高时使用。
+      font_family: Noto Sans CJK SC
+      title_size: 22
+      body_size: 16
+      chart_body_size: 13
+      table_size: 11
+      small_size: 8
+      title_color: "1F1F1F"
+      text_color: "2E2E2E"
+      muted_color: "7F7F7F"
+      accent: "7A3E00"
+      accent_text: "FFFFFF"
+  font_family: Noto Sans CJK SC  # 兼容保留：主题未提供 font_family 时使用。
   render_dpi: 144  # S7 将 PDF 转为逐页 PNG 时采用的 DPI。
 
 # 模型、工具、循环和时间预算；不同限制从相应 Stage 开始生效。
@@ -84,11 +124,15 @@ limits:
 
 # 确定性 Deck/PPT 检查规则；首次使用：S7。
 review:
-  max_bullets_per_slide: 6  # 单页允许的最大 bullet 数，超过时生成 warning。
-  max_chars_per_slide: 260  # 单页全部 bullet 的最大总字符数，超过时生成 warning。
+  max_bullets_per_slide: 8  # 单页允许的最大 bullet 数，超过时生成 warning。
+  max_chars_per_slide: 500  # 单页全部 bullet 的最大总字符数，超过时生成 warning。
+  max_table_rows: 8  # 表格页允许的最大数据行数（不含表头），超过时生成 warning。
+  max_chars_per_table_cell: 140  # 单个表格单元格的最大字符数，超过时生成 warning。
   require_source_for_numeric_claim: true  # 是否把没有 source_id 的数字论断标记为 error。
   require_metric_scope_label: true  # 是否要求份额内容明确写成“样本内 MAU 份额”。
   require_chart_for_share: true  # 是否要求 s2（样本内 MAU 份额）与 s3（多期趋势）给出图表，或明确声明数据缺口。
+  model_review: true  # 是否在规则检查之后追加一轮模型语义评审；模型问题只作 warning，不阻塞交付。
+  max_model_issues: 5  # 每轮模型评审最多采纳的问题条数。
 
 # 调试、复现和录屏所需的日志设置；首次使用：S0。
 recording:
